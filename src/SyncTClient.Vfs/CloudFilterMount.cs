@@ -942,14 +942,19 @@ public sealed class CloudFilterMount : IDisposable
                 // Geliefert wird der Bereich, den die Quelle wirklich geholt
                 // hat, nicht der angefragte. Er ist blockgroesser: sonst kaeme
                 // derselbe Block fuer jeden Sektor erneut.
-                if (!TransferData(request, data, dataOffset))
+                var ausgang = TransferData(request, data, dataOffset);
+
+                if (ausgang == Uebergabe.Fehler)
                 {
                     _log?.Invoke($"  abgebrochen bei [{offset}..{offset + take}) " +
                                  $"nach {geliefert} von {length} B.");
                     return;
                 }
 
-                geliefert += data.Length;
+                // "Schon gefuellt" ist kein Fehler. Frueher wurde auch dann
+                // abgebrochen -- bei einem Bereich aus mehreren Stuecken fiel
+                // der Rest damit aus, und der Abruf lief in seine Frist.
+                if (ausgang == Uebergabe.Erfolg) geliefert += data.Length;
 
                 // Ein Stueck, das ungewoehnlich lange braucht, wird genannt --
                 // getrennt nach Holen und Durchreichen. Ohne diese Trennung
@@ -1077,7 +1082,18 @@ public sealed class CloudFilterMount : IDisposable
         }
     }
 
-    private unsafe bool TransferData(HydrationRequest request, byte[] data, long offset)
+    /// <summary>Was CfExecute zu einer Uebergabe gesagt hat.</summary>
+    private enum Uebergabe
+    {
+        Erfolg,
+
+        /// <summary>Der Bereich war schon gefuellt -- kein Fehler.</summary>
+        BereichGefuellt,
+
+        Fehler
+    }
+
+    private unsafe Uebergabe TransferData(HydrationRequest request, byte[] data, long offset)
     {
         var buffer = NativeMemory.AlignedAlloc((nuint)data.Length, SectorSize);
 
@@ -1103,7 +1119,7 @@ public sealed class CloudFilterMount : IDisposable
     private unsafe void TransferFailure(HydrationRequest request, long offset)
         => Transfer(request, null, offset, 0, unchecked((int)0xC0000001));
 
-    private unsafe bool Transfer(HydrationRequest request, void* buffer, long offset, long length, int ntStatus)
+    private unsafe Uebergabe Transfer(HydrationRequest request, void* buffer, long offset, long length, int ntStatus)
     {
         var operation = new CF_OPERATION_INFO
         {
@@ -1136,19 +1152,20 @@ public sealed class CloudFilterMount : IDisposable
                          $"Ergebnis 0x{(uint)result.Value:X8}.");
         }
 
-        if (!result.Failed) return true;
+        if (!result.Failed) return Uebergabe.Erfolg;
 
-        // 0x8007018E: die Anfrage wurde storniert, weil ein anderer Abruf den
-        // Bereich bereits gefuellt hat. Das ist kein Fehler, aber ein Grund
-        // abzubrechen. Alles Weitere waere eine zweite Uebertragung derselben
-        // Bytes.
+        // 0x8007018E: die Anfrage wurde storniert, weil der Bereich bereits
+        // gefuellt war -- durch eine fruehere Uebergabe dieses Durchgangs oder
+        // durch einen anderen Abruf. Kein Fehler: die Bytes liegen da.
         const uint requestCanceled = 0x8007018E;
         if ((uint)result.Value == requestCanceled)
+        {
             _log?.Invoke("  (Anfrage storniert -- Bereich war bereits gefuellt)");
-        else
-            _log?.Invoke($"  CfExecute schlug fehl: 0x{(uint)result.Value:X8}");
+            return Uebergabe.BereichGefuellt;
+        }
 
-        return false;
+        _log?.Invoke($"  CfExecute schlug fehl: 0x{(uint)result.Value:X8}");
+        return Uebergabe.Fehler;
     }
 
     /// <summary>
