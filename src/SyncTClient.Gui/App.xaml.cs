@@ -369,15 +369,23 @@ public partial class App : Application
     /// <summary>Setzt die Sprache. Leer bedeutet: der Einstellung des Systems folgen.</summary>
     public static void ApplyLanguage(string? language)
     {
-        var english = language switch
+        // Eingetragen: genau diese Sprache. Leer: die Sprache der Oberflaeche
+        // des Systems; kennt das Programm sie nicht, bleibt es beim Englischen.
+        var datei = language switch
         {
-            "en" => true,
-            "de" => false,
-            _ => !System.Globalization.CultureInfo.CurrentUICulture
-                .TwoLetterISOLanguageName.Equals("de", StringComparison.OrdinalIgnoreCase)
+            "de" => "Sprachen/de.xaml",
+            "en" => "Sprachen/en.xaml",
+            "zh-CN" or "zh" => "Sprachen/zh-CN.xaml",
+            _ => System.Globalization.CultureInfo.CurrentUICulture
+                .TwoLetterISOLanguageName.ToLowerInvariant() switch
+            {
+                "de" => "Sprachen/de.xaml",
+                "zh" => "Sprachen/zh-CN.xaml",
+                _ => "Sprachen/en.xaml"
+            }
         };
 
-        Swap(ref _strings, english ? "Sprachen/en.xaml" : "Sprachen/de.xaml");
+        Swap(ref _strings, datei);
     }
 
     /// <summary>

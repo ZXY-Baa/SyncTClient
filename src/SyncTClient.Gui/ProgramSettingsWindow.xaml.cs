@@ -77,7 +77,7 @@ public partial class ProgramSettingsWindow : Window
         _loading = true;
 
         HomeBox.Text = _home;
-        LanguageBox.SelectedIndex = config.Language switch { "de" => 1, "en" => 2, _ => 0 };
+        LanguageBox.SelectedIndex = config.Language switch { "de" => 1, "en" => 2, "zh-CN" => 3, _ => 0 };
         ThemeBox.SelectedIndex = config.Theme switch { "Hell" => 1, "Dunkel" => 2, _ => 0 };
 
         ThresholdBox.Text = Math.Max(1, config.MinimumCopies).ToString();
@@ -156,7 +156,7 @@ public partial class ProgramSettingsWindow : Window
     {
         if (_loading) return;
 
-        App.ApplyLanguage(LanguageBox.SelectedIndex switch { 1 => "de", 2 => "en", _ => null });
+        App.ApplyLanguage(LanguageBox.SelectedIndex switch { 1 => "de", 2 => "en", 3 => "zh-CN", _ => null });
         App.ApplyTheme(ThemeBox.SelectedIndex switch { 1 => "Hell", 2 => "Dunkel", _ => null });
     }
 
@@ -460,7 +460,7 @@ public partial class ProgramSettingsWindow : Window
                 .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         ];
         _config.Relays = RelaysBox.IsChecked == true;
-        _config.Language = LanguageBox.SelectedIndex switch { 1 => "de", 2 => "en", _ => "" };
+        _config.Language = LanguageBox.SelectedIndex switch { 1 => "de", 2 => "en", 3 => "zh-CN", _ => "" };
         _config.Theme = ThemeBox.SelectedIndex switch { 1 => "Hell", 2 => "Dunkel", _ => "" };
 
         // Der Autostart ist der einzige Eintrag ausserhalb der Konfiguration.
