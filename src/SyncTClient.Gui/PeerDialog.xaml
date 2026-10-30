@@ -27,6 +27,7 @@
             <Label Content="{DynamicResource S.Peer.Address}" />
             <TextBox x:Name="AddressBox" />
             <TextBlock Foreground="{DynamicResource Gedaempft}" FontSize="11" Margin="0,0,0,8"
+                       TextWrapping="Wrap"
                        Text="{DynamicResource S.Peer.AddressHint}" />
 
             <Label Content="{DynamicResource S.Peer.DeviceId}" />
