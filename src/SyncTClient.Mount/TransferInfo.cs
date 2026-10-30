@@ -140,12 +140,19 @@ public sealed class TransferInfo : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>
+    /// Je Eigenschaftsname ein festes Argument. PropertyChangedEventArgs ist
+    /// unveraenderlich, ein Exemplar genuegt; bislang entstand je Meldung ein
+    /// neues -- beim Fortschritt mehrere hundert je Sekunde.
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, PropertyChangedEventArgs> _argumente = new();
+
     private void Notify([CallerMemberName] string? property = null)
     {
         var handler = PropertyChanged;
         if (handler is null) return;
 
-        var args = new PropertyChangedEventArgs(property);
+        var args = _argumente.GetOrAdd(property ?? "", static name => new PropertyChangedEventArgs(name));
         if (UiContext is null) handler(this, args);
         else UiContext.Post(_ => handler(this, args), null);
     }

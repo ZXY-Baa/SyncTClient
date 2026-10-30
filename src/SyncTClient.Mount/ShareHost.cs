@@ -4153,8 +4153,19 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
             transfer.State = TransferState.Laeuft;
 
             var blockSize = Math.Max(file.BlockSize, 1);
+
+            // Fortschritt zeitlich drosseln: FileFetcher meldet je Block, also
+            // hunderte Male je Sekunde; jede Meldung wandert einzeln auf den
+            // Oberflaechen-Thread. Der Endstand wird nach dem Holen ohnehin
+            // gesetzt, hier geht es nur um Zwischenstaende.
+            long zuletzt = 0;
             var progress = new Progress<int>(blocks =>
-                transfer.DoneBytes = already + Math.Min((long)blocks * blockSize, length));
+            {
+                var jetzt = Environment.TickCount64;
+                if (jetzt - zuletzt < 100) return;
+                zuletzt = jetzt;
+                transfer.DoneBytes = already + Math.Min((long)blocks * blockSize, length);
+            });
 
             // Geholt wird bei einer Gegenstelle, die den Inhalt fuehrt. Eine,
             // die den Namen nur kennt, haette nichts zu liefern.

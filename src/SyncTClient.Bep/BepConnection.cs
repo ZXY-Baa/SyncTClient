@@ -427,7 +427,7 @@ public sealed class BepConnection : IAsyncDisposable
                 Id = request.Id,
                 Code = code,
                 Data = code == ErrorCode.NoError && data is { Length: > 0 }
-                    ? ByteString.CopyFrom(data)
+                    ? UnsafeByteOperations.UnsafeWrap((ReadOnlyMemory<byte>)data)
                     : ByteString.Empty
             }, ct).ConfigureAwait(false);
         }

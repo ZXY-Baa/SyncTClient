@@ -31,13 +31,17 @@ public static class BepFraming
         var headerBytes = header.ToByteArray();
         var payload = message.ToByteArray();
 
-        var frame = new byte[2 + headerBytes.Length + 4 + payload.Length];
-        BinaryPrimitives.WriteUInt16BigEndian(frame.AsSpan(0), (ushort)headerBytes.Length);
-        headerBytes.CopyTo(frame.AsSpan(2));
-        BinaryPrimitives.WriteUInt32BigEndian(frame.AsSpan(2 + headerBytes.Length), (uint)payload.Length);
-        payload.CopyTo(frame.AsSpan(2 + headerBytes.Length + 4));
+        // Kopf und Laengenangabe in einem Stueck, die Nutzlast danach. Vorher
+        // wurde beides samt Nutzlast in einen zweiten Puffer derselben Groesse
+        // kopiert -- bei einer Blockantwort ist das noch einmal die volle
+        // Blockgroesse, die umkopiert und spaeter eingesammelt werden muss.
+        var prefix = new byte[2 + headerBytes.Length + 4];
+        BinaryPrimitives.WriteUInt16BigEndian(prefix.AsSpan(0), (ushort)headerBytes.Length);
+        headerBytes.CopyTo(prefix.AsSpan(2));
+        BinaryPrimitives.WriteUInt32BigEndian(prefix.AsSpan(2 + headerBytes.Length), (uint)payload.Length);
 
-        await stream.WriteAsync(frame, ct).ConfigureAwait(false);
+        await stream.WriteAsync(prefix, ct).ConfigureAwait(false);
+        await stream.WriteAsync(payload, ct).ConfigureAwait(false);
         await stream.FlushAsync(ct).ConfigureAwait(false);
     }
 
