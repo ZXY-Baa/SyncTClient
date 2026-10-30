@@ -4113,7 +4113,8 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
         }
     }
 
-    public async Task<byte[]> ReadAsync(string relativePath, long offset, long length, CancellationToken ct)
+    public async Task<(long Offset, byte[] Data)> ReadAsync(
+        string relativePath, long offset, long length, CancellationToken ct)
     {
         if (IsPaused)
             throw new InvalidOperationException($"\"{FolderId}\" ist angehalten.");
@@ -4154,6 +4155,17 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
 
             var blockSize = Math.Max(file.BlockSize, 1);
 
+            // Geholt wird blockweise, nicht sektorenweise: eine Pruefsumme
+            // gibt es je Block, ein einzelner Sektor laesst sich nicht
+            // anfordern. Angefordert wird deshalb der ganze Block um den
+            // Sektor herum -- und genau der wird auch geliefert. Sonst kaeme
+            // derselbe Block fuer jeden seiner Sektoren erneut: bei 128 KiB
+            // Bloecken und 4 KiB Leseanfragen waren das 32 Uebertragungen je
+            // Block, also das 28-fache der Dateigroesse.
+            var anfang = offset / blockSize * blockSize;
+            var ende = Math.Min(file.Size, (offset + length + blockSize - 1) / blockSize * blockSize);
+            var zuHolen = Math.Max(0, ende - anfang);
+
             // Fortschritt zeitlich drosseln: FileFetcher meldet je Block, also
             // hunderte Male je Sekunde; jede Meldung wandert einzeln auf den
             // Oberflaechen-Thread. Der Endstand wird nach dem Holen ohnehin
@@ -4164,7 +4176,7 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
                 var jetzt = Environment.TickCount64;
                 if (jetzt - zuletzt < 100) return;
                 zuletzt = jetzt;
-                transfer.DoneBytes = already + Math.Min((long)blocks * blockSize, length);
+                transfer.DoneBytes = already + Math.Min((long)blocks * blockSize, zuHolen);
             });
 
             // Geholt wird bei einer Gegenstelle, die den Inhalt fuehrt. Eine,
@@ -4173,7 +4185,7 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
                 ?? throw new InvalidOperationException($"\"{FolderId}\" ist nicht verbunden.");
 
             var data = await FileFetcher.FetchRangeAsync(
-                leitung, FolderId, file, offset, length, _app.Parallelism, progress, ct)
+                leitung, FolderId, file, anfang, zuHolen, _app.Parallelism, progress, ct)
                 .ConfigureAwait(false);
 
             transfer.DoneBytes = already + data.Length;
@@ -4188,7 +4200,7 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
             // darauf wartet.
             _ = Task.Run(EnforceLimitsAsync, CancellationToken.None);
 
-            return data;
+            return (anfang, data);
         }
         catch (Exception ex)
         {

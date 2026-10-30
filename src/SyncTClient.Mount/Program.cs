@@ -543,6 +543,7 @@ file sealed class EmptySource : IContentSource
 {
     public IReadOnlyList<VirtualEntry> Enumerate() => [];
 
-    public Task<byte[]> ReadAsync(string relativePath, long offset, long length, CancellationToken ct)
+    public Task<(long Offset, byte[] Data)> ReadAsync(
+        string relativePath, long offset, long length, CancellationToken ct)
         => throw new FileNotFoundException(relativePath);
 }

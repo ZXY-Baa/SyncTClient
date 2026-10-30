@@ -24,7 +24,17 @@ public interface IContentSource
     /// Liefert einen Bereich einer Datei. Windows fragt genau so an: mit
     /// Offset und Laenge, nicht nach der ganzen Datei.
     /// </summary>
-    Task<byte[]> ReadAsync(string relativePath, long offset, long length, CancellationToken ct);
+    /// <remarks>
+    /// Zurueck kommt der Bereich, der wirklich geliefert wird: Anfang und
+    /// Inhalt. Er ist in der Regel groesser als der angefragte -- angefragt
+    /// wird in Sektoren, geholt und geliefert wird in Bloecken, weil das
+    /// Protokoll nur ganze Bloecke mit eigener Pruefsumme kennt. Ohne das
+    /// kaeme derselbe Block fuer jeden seiner Sektoren erneut: bei 128 KiB
+    /// Bloecken und 4 KiB Leseanfragen waere eine 150-KB-Datei gut 4 MB
+    /// gross.
+    /// </remarks>
+    Task<(long Offset, byte[] Data)> ReadAsync(
+        string relativePath, long offset, long length, CancellationToken ct);
 
     /// <summary>
     /// Kuendigt an, dass ein zusammenhaengender Bereich geholt wird. Er kommt

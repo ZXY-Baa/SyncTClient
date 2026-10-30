@@ -933,19 +933,23 @@ public sealed class CloudFilterMount : IDisposable
                 // wenn wir laengst laden und nur die Leitung belegt ist.
                 using var puls = Fortschrittsmelder(request, length, geliefert);
 
-                var data = await _source.ReadAsync(request.RelativePath, offset, take, CancellationToken.None)
+                var (dataOffset, data) = await _source.ReadAsync(
+                        request.RelativePath, offset, take, CancellationToken.None)
                     .ConfigureAwait(false);
 
                 var geholt = Environment.TickCount64;
 
-                if (!TransferData(request, data, offset))
+                // Geliefert wird der Bereich, den die Quelle wirklich geholt
+                // hat, nicht der angefragte. Er ist blockgroesser: sonst kaeme
+                // derselbe Block fuer jeden Sektor erneut.
+                if (!TransferData(request, data, dataOffset))
                 {
                     _log?.Invoke($"  abgebrochen bei [{offset}..{offset + take}) " +
                                  $"nach {geliefert} von {length} B.");
                     return;
                 }
 
-                geliefert += take;
+                geliefert += data.Length;
 
                 // Ein Stueck, das ungewoehnlich lange braucht, wird genannt --
                 // getrennt nach Holen und Durchreichen. Ohne diese Trennung
