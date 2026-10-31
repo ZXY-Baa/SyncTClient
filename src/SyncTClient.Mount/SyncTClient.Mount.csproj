@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -21,6 +21,12 @@
          zwei Methoden fehlten, die laengst im Quelltext standen. Mit fester
          RuntimeIdentifier fallen Pfad und Uebersetzung wieder zusammen. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+
+    <!-- Nicht selbsttragend. Das passt zum gewoehnlichen Uebersetzen, bei dem
+         auch der Client ohne RuntimeIdentifier laeuft. Beim Veroeffentlichen
+         ist der Client dagegen self-contained; damit die Pruefung des SDK
+         (NETSDK1150) nicht anschlaegt, wird SelfContained dort als globale
+         Eigenschaft uebergeben und gilt damit auch hier. -->
     <SelfContained>false</SelfContained>
   </PropertyGroup>
 

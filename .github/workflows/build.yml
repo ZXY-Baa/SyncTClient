@@ -1,0 +1,73 @@
+name: build
+
+# Baut die Projektmappe auf einem Windows-Runner und legt das
+# veroeffentlichte Programm als Artefakt ab.
+#
+# Warum windows-latest und nicht ein Linux-Runner: die Shell-Erweiterung
+# (synctexplorer.dll) wird mit NativeAOT gebaut und braucht dafuer den
+# MSVC-Linker und das Windows SDK. Beides ist im Windows-Image enthalten.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: .NET 10 einrichten
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Fassung anzeigen
+        run: dotnet --version
+
+      # Baut alle sieben Projekte, die Shell-Erweiterung eingeschlossen.
+      # Laeuft ohne -warnaserror: eine neue SDK-Fassung soll den Lauf nicht
+      # an einer Warnung scheitern lassen, die niemand verursacht hat.
+      - name: Uebersetzen
+        run: dotnet build SyncTClient.slnx -c Release --nologo
+
+      # Prueft, dass die Protokollbibliothek geladen wird und eine
+      # Geraetekennung erzeugen kann. Kostet Sekunden und faengt Fehler,
+      # die erst zur Laufzeit auffallen wuerden.
+      - name: Protokoll-Probe
+        run: dotnet run --project src/SyncTClient.Probe -c Release --no-build -- --id
+
+      # Veroeffentlicht das Programm nach BIN. Der Schritt zieht die
+      # Shell-Erweiterung mit (VorschauDllMitnehmen) und bricht ab, wenn sie
+      # sich nicht bauen laesst -- ein Paket ohne sie sieht vollstaendig aus
+      # und ist es nicht.
+      #
+      # SelfContained steht zusaetzlich auf der Befehlszeile, obwohl es im
+      # Profil steht: die Eigenschaft muss eine globale sein, sonst gilt sie
+      # nur fuer den Client. synctmount ist eine Exe unter seinen Verweisen
+      # und nicht selbsttragend; ohne die globale Eigenschaft bricht das
+      # Veroeffentlichen mit NETSDK1150 ab.
+      - name: Veroeffentlichen
+        run: dotnet publish src/SyncTClient.Gui/SyncTClient.Gui.csproj -c Release -p:PublishProfile=FolderProfile -p:SelfContained=true --nologo
+
+      - name: Programm als Artefakt ablegen
+        uses: actions/upload-artifact@v4
+        with:
+          name: SyncTClient-win-x64
+          path: BIN/
+          if-no-files-found: error
+          retention-days: 14
