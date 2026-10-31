@@ -116,6 +116,9 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
     private readonly Action<string> _log;
     private readonly SemaphoreSlim _hydrationGate = new(ConcurrentHydrations);
 
+    /// <summary>Die zuletzt geholten Bloecke. Kurzlebig und hart begrenzt.</summary>
+    private readonly BlockCache _bloecke = new();
+
     // ------------------------------------------------------ Vorrang
 
     /// <summary>
@@ -4166,6 +4169,19 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
             var ende = Math.Min(file.Size, (offset + length + blockSize - 1) / blockSize * blockSize);
             var zuHolen = Math.Max(0, ende - anfang);
 
+            // Was eben schon geholt wurde, kostet kein Netz: Windows fragt
+            // dieselbe Stelle mehrfach an, und dieselbe Datei wird oft
+            // mehrmals geoeffnet. Stimmte die Fassung nicht mehr, faellt der
+            // Vorrat aus und es wird geholt.
+            if (zuHolen > 0
+                && _bloecke.TryAssemble(relativePath, file, anfang, zuHolen, out var ausVorrat))
+            {
+                transfer.DoneBytes = already + ausVorrat.Length;
+                if (!part) transfer.State = TransferState.Fertig;
+                _cache?.NoteAccess(relativePath);
+                return (anfang, ausVorrat);
+            }
+
             // Fortschritt zeitlich drosseln: FileFetcher meldet je Block, also
             // hunderte Male je Sekunde; jede Meldung wandert einzeln auf den
             // Oberflaechen-Thread. Der Endstand wird nach dem Holen ohnehin
@@ -4187,6 +4203,8 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
             var data = await FileFetcher.FetchRangeAsync(
                 leitung, FolderId, file, anfang, zuHolen, _app.Parallelism, progress, ct)
                 .ConfigureAwait(false);
+
+            _bloecke.Ablegen(relativePath, file, anfang, data);
 
             transfer.DoneBytes = already + data.Length;
             if (!part) transfer.State = TransferState.Fertig;
@@ -4663,6 +4681,7 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
     public async ValueTask DisposeAsync()
     {
         await StopAsync();
+        _bloecke.Leeren();
 
         // Beim Beenden, denn dabei wird die Datenbank vollstaendig neu
         // geschrieben und waehrenddessen geht nichts anderes. Es wartet
