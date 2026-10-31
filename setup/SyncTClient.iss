@@ -72,8 +72,11 @@ WizardStyle=modern
 ; Seite mit den Schaltern "Ich akzeptiere" / "Ich akzeptiere nicht"; ohne
 ; Zustimmung geht es nicht weiter. Der Haftungsausschluss ist der Grund fuer
 ; diese Seite -- in der Lizenz steht er auch, aber dort liest ihn niemand.
-Name: "deutsch"; MessagesFile: "compiler:Languages\German.isl"; LicenseFile: "EULA.de.txt"
+;
+; English steht zuerst: die erste Sprache der Liste ist die Vorgabe fuer
+; Systeme, deren Sprache nicht dabei ist.
 Name: "english"; MessagesFile: "compiler:Default.isl";           LicenseFile: "EULA.en.txt"
+Name: "deutsch"; MessagesFile: "compiler:Languages\German.isl"; LicenseFile: "EULA.de.txt"
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"; LicenseFile: "EULA.zh-CN.txt"
 
 [Tasks]
