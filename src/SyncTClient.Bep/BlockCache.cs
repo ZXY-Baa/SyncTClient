@@ -1,4 +1,5 @@
 ﻿using BepFileInfo = SyncTClient.Bep.Proto.FileInfo;
+using BlockInfo = SyncTClient.Bep.Proto.BlockInfo;
 
 namespace SyncTClient.Bep;
 
@@ -63,6 +64,23 @@ public sealed class BlockCache
 
         lock (_gate)
         {
+            // Ein einzelner Block ist der Regelfall: dann wird der Puffer
+            // selbst zurueckgegeben, statt ihn noch einmal zu kopieren.
+            var einzeln = Einzelblock(file, anfang, laenge);
+            if (einzeln is not null)
+            {
+                if (!_index.TryGetValue((name, einzeln.Offset), out var knoten)) return false;
+                if (!knoten.Value.Hash.AsSpan().SequenceEqual(einzeln.Hash.Span)) return false;
+
+                _reihe.Remove(knoten);
+                _reihe.AddFirst(knoten);
+                daten = knoten.Value.Daten;
+                return true;
+            }
+
+            // Mehrere Bloecke: erst pruefen, dann kopieren. Eine halb
+            // gefuellte Antwort waere schlimmer als gar keine; fehlt auch nur
+            // einer, wird der ganze Bereich geholt.
             foreach (var block in file.Blocks)
             {
                 if (block.Offset < anfang || block.Offset + block.Size > anfang + laenge) continue;
@@ -96,6 +114,15 @@ public sealed class BlockCache
     /// <summary>Legt die Bloecke eines soeben geholten Bereichs ab.</summary>
     public void Ablegen(string name, BepFileInfo file, long anfang, byte[] daten)
     {
+        // Ein einzelner Block ist der Regelfall: dann wird der Puffer selbst
+        // gehalten, nicht noch einmal kopiert.
+        var einzeln = Einzelblock(file, anfang, daten.Length);
+        if (einzeln is not null)
+        {
+            Put(name, einzeln.Offset, daten, einzeln.Hash.Span);
+            return;
+        }
+
         foreach (var block in file.Blocks)
         {
             if (block.Offset < anfang || block.Offset + block.Size > anfang + daten.Length) continue;
@@ -104,6 +131,22 @@ public sealed class BlockCache
             Buffer.BlockCopy(daten, (int)(block.Offset - anfang), teil, 0, block.Size);
             Put(name, block.Offset, teil, block.Hash.Span);
         }
+    }
+
+    /// <summary>
+    /// Der eine Block, der den Bereich genau abdeckt -- oder null, wenn es
+    /// keiner oder mehrere sind.
+    /// </summary>
+    private static BlockInfo? Einzelblock(BepFileInfo file, long anfang, long laenge)
+    {
+        BlockInfo? gefunden = null;
+        foreach (var block in file.Blocks)
+        {
+            if (block.Offset < anfang || block.Offset + block.Size > anfang + laenge) continue;
+            if (gefunden is not null) return null;
+            gefunden = block;
+        }
+        return gefunden;
     }
 
     private void Put(string name, long offset, byte[] daten, ReadOnlySpan<byte> hash)
