@@ -1,4 +1,4 @@
-﻿using System.Net.Http;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
@@ -32,10 +32,10 @@ public sealed record NeuereFassung(Version Version, string Seite);
 public static class UpdateCheck
 {
     /// <summary>Wo die Freigaben liegen.</summary>
-    private const string Api = "https://api.github.com/repos/Taloan/SyncTClient/releases/latest";
+    private const string Api = "https://api.github.com/repos/ZXY-Baa/SyncTClient/releases/latest";
 
     /// <summary>Die Seite, die der Verweis oeffnet.</summary>
-    public const string Seite = "https://github.com/Taloan/SyncTClient/releases/latest";
+    public const string Seite = "https://github.com/ZXY-Baa/SyncTClient/releases/latest";
 
     /// <summary>
     /// Ist die Abfrage nach diesem Abstand faellig?

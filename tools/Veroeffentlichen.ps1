@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Macht aus dem Veroeffentlichungsverzeichnis einen Installer und legt ihn
     als Freigabe auf GitHub ab.
@@ -37,7 +37,7 @@
     zusammengesetzt.
 
 .PARAMETER Repo
-    Das Verzeichnis auf GitHub, etwa "dirkmertens/SyncTClient".
+    Das Verzeichnis auf GitHub, etwa "ZXY-Baa/SyncTClient".
 
 .PARAMETER Entwurf
     Die Freigabe wird als Entwurf angelegt und nicht veroeffentlicht.

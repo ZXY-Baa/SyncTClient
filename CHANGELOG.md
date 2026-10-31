@@ -1,9 +1,41 @@
-﻿# Changes
+# Changes
 
 Entries are written by hand. They say what changed for the user, not the
 subjects of the commits — the commit-by-commit history is in `git log`.
 
 <!-- New versions go in by hand below this line, above the previous one. -->
+
+## 1.0.0 — 2026-11-01
+
+First release of this continuation. It no longer follows the original
+project; the version number starts over here.
+
+**User interface**
+
+- Simplified Chinese, selectable under Settings → Language. Left on "follow the
+  system", a Chinese Windows picks it up by itself.
+- The hint under *Address* in the add-peer dialog was cut off at the window
+  edge; it wraps now.
+
+**Transfer**
+
+- Content is now fetched block by block and handed to Windows whole. Windows
+  reads in 4 KiB sectors while the protocol only knows 128 KiB blocks, so every
+  sector used to cost a whole block: a 150 KB file moved 4.3 MB. It now moves
+  its own size.
+- Recently fetched blocks are kept in a bounded in-memory cache of 32 MiB per
+  share, each entry verified against the checksum in the index. Opening the
+  same file again costs no traffic.
+- A range Windows asks for that is already filled is no longer treated as a
+  failure; before, the rest of such a request was silently dropped.
+- The outgoing path writes the frame without assembling it in a second buffer,
+  and protobuf no longer copies the payload before sending it.
+- Progress is reported at most ten times a second instead of once per block.
+
+**Large shares**
+
+- The volume overview reads the index in pages of ten thousand entries instead
+  of one block, and no longer holds the index lock for the whole scan.
 
 ## 0.9.8 — 2026-09-26
 

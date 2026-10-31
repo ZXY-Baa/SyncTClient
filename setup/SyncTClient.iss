@@ -1,4 +1,4 @@
-﻿; Das Installationspaket fuer SyncTClient.
+; Das Installationspaket fuer SyncTClient.
 ;
 ; Uebersetzt wird es von tools\Veroeffentlichen.ps1; die Fassung kommt von
 ; dort und steht nicht hier, sonst gaebe es zwei Stellen mit derselben Zahl:
@@ -18,14 +18,15 @@
 #endif
 
 [Setup]
-; Die Kennung bleibt ueber alle Fassungen dieselbe. An ihr erkennt Windows
-; eine bestehende Installation und ersetzt sie, statt eine zweite anzulegen.
-AppId={{0D208188-67C7-44F2-BDA7-2FFCAFD0F21B}
+; Eigene Kennung, unabhaengig vom Ursprungsprojekt: Windows erkennt daran eine
+; bestehende Installation dieser Fortfuehrung und ersetzt sie. Eine Installation
+; der Ursprungsquelle daneben bleibt eine eigene Anwendung.
+AppId={{413AD422-5021-4A80-A5F3-18548D600903}
 AppName=SyncTClient
 AppVersion={#Fassung}
 AppVerName=SyncTClient {#Fassung}
 VersionInfoVersion={#Fassung}
-AppPublisher=Dirk Mertens
+AppPublisher=ZXY_Baa
 
 ; Ohne Administratorrechte -- aber die Wahl bleibt.
 ;

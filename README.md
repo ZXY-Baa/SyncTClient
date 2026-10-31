@@ -4,7 +4,12 @@
 
 # SyncTClient
 
-[![Latest release](https://img.shields.io/github/v/release/Taloan/SyncTClient)](https://github.com/Taloan/SyncTClient/releases/latest)
+> [!NOTE]
+> This is a personal continuation of the original SyncTClient, detached from
+> it. Versioning starts over at 1.0.0, and changes from the original source
+> are no longer taken over.
+
+[![Latest release](https://img.shields.io/github/v/release/ZXY-Baa/SyncTClient)](https://github.com/ZXY-Baa/SyncTClient/releases/latest)
 
 A Syncthing client for Windows that presents files as **placeholders** and
 transfers their content on first access — with a self-managed cache per volume.
@@ -192,7 +197,7 @@ file count and size, so the choice is made against numbers rather than guesses.*
 
 ## Installation
 
-Ready-made package under [Releases](https://github.com/Taloan/SyncTClient/releases/latest).
+Ready-made package under [Releases](https://github.com/ZXY-Baa/SyncTClient/releases/latest).
 
 Requires Windows 10 version 2004 (build 19041) or newer, 64-bit.
 **No administrator rights are needed.** The program registers its Explorer
@@ -218,7 +223,7 @@ To continue: **More info**, then **Run anyway**.
 
 To make sure the file is the one published here, compare its checksum with the
 one given on the
-[release](https://github.com/Taloan/SyncTClient/releases/latest):
+[release](https://github.com/ZXY-Baa/SyncTClient/releases/latest):
 
 ```powershell
 Get-FileHash .\SyncTClient-*-setup.exe -Algorithm SHA256
@@ -280,7 +285,7 @@ dotnet run --project src/SyncTClient.Probe -- --addr 192.168.1.42:22000 --target
 ## Status
 
 The client is in daily use against Syncthing v2. Which version is current is on
-the [releases page](https://github.com/Taloan/SyncTClient/releases/latest) and
+the [releases page](https://github.com/ZXY-Baa/SyncTClient/releases/latest) and
 in the badge above; every change is listed in the
 [changelog](CHANGELOG.md).
 
@@ -291,9 +296,10 @@ Windows reports a lock on the file.
 
 ## Contributing
 
-This repository is read-only for everyone but its author. Feel free to
-download, read and use the code; bug reports through issues are welcome. There
-is a single source for changes, and that is deliberate.
+This is an independent continuation and no longer follows the original
+project. The source is here to read and use under the Apache License 2.0; see
+[NOTICE](NOTICE) for where it comes from. Bug reports and suggestions are
+welcome as issues; changes are made here and only here.
 
 ## Liability
 

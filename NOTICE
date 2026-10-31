@@ -1,0 +1,15 @@
+SyncTClient
+
+This program is a continuation of the original SyncTClient, which is
+licensed under the Apache License 2.0.
+
+Original work by Dirk Mertens and contributors
+    https://github.com/Taloan/SyncTClient
+
+Modifications in this copy
+    https://github.com/ZXY-Baa/SyncTClient
+
+Files and behaviour have been changed. What changed for the user is in
+CHANGELOG.md; the individual changes are in the git history.
+
+Licensed under the Apache License, Version 2.0 -- see LICENSE.

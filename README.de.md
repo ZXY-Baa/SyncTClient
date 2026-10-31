@@ -4,7 +4,12 @@
 
 # SyncTClient
 
-[![Neueste Freigabe](https://img.shields.io/github/v/release/Taloan/SyncTClient)](https://github.com/Taloan/SyncTClient/releases/latest)
+> [!NOTE]
+> Dies ist eine eigene Fortführung des ursprünglichen SyncTClient, von ihm
+> losgelöst. Die Versionsnummern beginnen bei 1.0.0 neu, Änderungen der
+> Ursprungsquelle werden nicht mehr übernommen.
+
+[![Neueste Freigabe](https://img.shields.io/github/v/release/ZXY-Baa/SyncTClient)](https://github.com/ZXY-Baa/SyncTClient/releases/latest)
 
 Ein Syncthing-Client für Windows, der Dateien als **Platzhalter** darstellt und
 Inhalte erst bei Zugriff überträgt — mit selbstverwaltetem Cache je Datenträger.
@@ -201,7 +206,7 @@ nennt Anzahl und Größe, damit die Wahl an Zahlen hängt und nicht am Gefühl.*
 
 ## Installation
 
-Fertiges Paket unter [Releases](https://github.com/Taloan/SyncTClient/releases/latest).
+Fertiges Paket unter [Releases](https://github.com/ZXY-Baa/SyncTClient/releases/latest).
 
 Voraussetzung ist Windows 10 Version 2004 (Build 19041) oder neuer, 64 Bit.
 **Administratorrechte werden nicht gebraucht.** Die Einbindung in den Explorer
@@ -227,7 +232,7 @@ Zum Fortfahren: **Weitere Informationen**, dann **Trotzdem ausführen**.
 
 Wer sichergehen will, dass die Datei die ist, die hier veröffentlicht wurde,
 vergleicht ihre Prüfsumme mit der, die bei der
-[Freigabe](https://github.com/Taloan/SyncTClient/releases/latest) steht:
+[Freigabe](https://github.com/ZXY-Baa/SyncTClient/releases/latest) steht:
 
 ```powershell
 Get-FileHash .\SyncTClient-*-setup.exe -Algorithm SHA256
@@ -291,7 +296,7 @@ dotnet run --project src/SyncTClient.Probe -- --addr 192.168.1.42:22000 --target
 
 Der Client läuft im täglichen Betrieb gegen Syncthing v2. Welche Fassung die
 aktuelle ist, steht bei den
-[Freigaben](https://github.com/Taloan/SyncTClient/releases/latest) und in der
+[Freigaben](https://github.com/ZXY-Baa/SyncTClient/releases/latest) und in der
 Plakette oben; jede Änderung steht im [Changelog](CHANGELOG.md) (englisch).
 
 Offen ist die Zusammenlegung der beiden Wege, auf denen ein Inhalt für „immer
@@ -301,10 +306,10 @@ Treffen beide zusammen, meldet Windows eine Sperre auf der Datei.
 
 ## Mitwirken
 
-Dieses Verzeichnis ist für alle außer seinem Autor nur lesbar. Der Quelltext
-darf heruntergeladen, gelesen und benutzt werden; Fehlermeldungen über Issues
-sind willkommen. Für Änderungen gibt es eine einzige Quelle, und das ist so
-gewollt.
+Dies ist eine eigenständige Fortführung und folgt dem Ursprungsprojekt nicht
+mehr. Der Quelltext ist hier zum Lesen und Benutzen unter der Apache-Lizenz
+2.0 abgelegt; woher er stammt, steht in [NOTICE](NOTICE). Fehlermeldungen und
+Anregungen sind als Issues willkommen; geändert wird hier und nur hier.
 
 ## Haftung
 

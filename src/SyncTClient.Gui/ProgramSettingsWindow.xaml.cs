@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -494,7 +494,7 @@ public partial class ProgramSettingsWindow : Window
     }
 
     /// <summary>Wo der Quelltext liegt.</summary>
-    private const string Heimat = "https://github.com/Taloan/SyncTClient";
+    private const string Heimat = "https://github.com/ZXY-Baa/SyncTClient";
 
     /// <summary>
     /// Fassung, Erstellungszeitpunkt und die Adresse des Quelltextes.
