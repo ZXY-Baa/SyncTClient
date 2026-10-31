@@ -75,9 +75,23 @@ WizardStyle=modern
 ;
 ; English steht zuerst: die erste Sprache der Liste ist die Vorgabe fuer
 ; Systeme, deren Sprache nicht dabei ist.
+;
+; ChineseSimplified.isl liegt neben diesem Skript und wird nicht aus dem
+; Inno-eigenen Languages-Verzeichnis genommen: die Uebersetzung gibt es dort
+; erst seit Juni 2026, und welche Fassung auf einem Rechner liegt, soll das
+; Ergebnis nicht bestimmen.
 Name: "english"; MessagesFile: "compiler:Default.isl";           LicenseFile: "EULA.en.txt"
 Name: "deutsch"; MessagesFile: "compiler:Languages\German.isl"; LicenseFile: "EULA.de.txt"
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"; LicenseFile: "EULA.zh-CN.txt"
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"; LicenseFile: "EULA.zh-CN.txt"
+
+[Messages]
+english.WelcomeLabel2=This will install SyncTClient {#Fassung} on this computer.%n%nThe program registers its Explorer integration -- thumbnails and context menu -- itself on first start. No administrator rights are needed for that.
+deutsch.WelcomeLabel2=Damit wird SyncTClient {#Fassung} auf diesem Rechner eingerichtet.%n%nDie Einbindung in den Explorer -- Vorschaubilder und Kontextmenü -- trägt das Programm beim ersten Start selbst ein. Administratorrechte werden dafür nicht gebraucht.
+chinesesimplified.WelcomeLabel2=将在本计算机上安装 SyncTClient {#Fassung}。%n%n程序会在首次启动时自行注册资源管理器集成（缩略图和上下文菜单），不需要管理员权限。
+[CustomMessages]
+english.StartWithWindows=Start with Windows
+deutsch.StartWithWindows=Beim Anmelden starten
+chinesesimplified.StartWithWindows=随 Windows 启动
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
@@ -108,11 +122,3 @@ Filename: "{app}\SyncTClient.exe"; Description: "{cm:LaunchProgram,SyncTClient}"
 ; Was das Programm zur Laufzeit neben sich anlegt. Ohne diese Zeilen bleibt
 ; das Verzeichnis nach dem Entfernen stehen.
 Type: filesandordirs; Name: "{app}\synct-home"
-
-[Messages]
-english.WelcomeLabel2=This will install SyncTClient {#Fassung} on this computer.%n%nThe program registers its Explorer integration -- thumbnails and context menu -- itself on first start. No administrator rights are needed for that.
-deutsch.WelcomeLabel2=Damit wird SyncTClient {#Fassung} auf diesem Rechner eingerichtet.%n%nDie Einbindung in den Explorer -- Vorschaubilder und Kontextmenü -- trägt das Programm beim ersten Start selbst ein. Administratorrechte werden dafür nicht gebraucht.
-chinesesimplified.WelcomeLabel2=将在本计算机上安装 SyncTClient {#Fassung}。%n%n程序会在首次启动时自行注册资源管理器集成（缩略图和上下文菜单），不需要管理员权限。
-english.StartWithWindows=Start with Windows
-deutsch.StartWithWindows=Beim Anmelden starten
-chinesesimplified.StartWithWindows=随 Windows 启动

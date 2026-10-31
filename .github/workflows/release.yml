@@ -1,0 +1,104 @@
+name: release
+
+# Legt bei einem Etikett v1.2.3 ein Installationspaket an und stellt es als
+# Freigabe ein.
+#
+# Die Fassung kommt aus dem Etikett, nicht aus der Projektdatei; beide muessen
+# aber uebereinstimmen, sonst bricht der Lauf ab. Ein Etikett, das auf einen
+# anderen Stand zeigt als das Paket, waere spaeter nicht mehr zu entwirren.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: .NET 10 einrichten
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Fassung aus dem Etikett
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') {
+            throw "Etikett '$tag' hat nicht die Form v1.2.3."
+          }
+          $version = $Matches[1]
+
+          $props = (Select-String -Path Directory.Build.props -Pattern '<Version>([^<]+)</Version>').Matches[0].Groups[1].Value
+          if ($props -ne $version) {
+            throw "Etikett sagt $version, Directory.Build.props sagt $props. Beides muss gleich sein."
+          }
+
+          "FASSUNG=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "Fassung: $version"
+
+      - name: Uebersetzen
+        run: dotnet build SyncTClient.slnx -c Release --nologo
+
+      # Wie im Bau-Lauf: SelfContained muss als globale Eigenschaft kommen,
+      # sonst bricht synctmount die Veroeffentlichung mit NETSDK1150 ab.
+      - name: Veroeffentlichen
+        run: dotnet publish src/SyncTClient.Gui/SyncTClient.Gui.csproj -c Release -p:PublishProfile=FolderProfile -p:SelfContained=true --nologo
+
+      - name: Inno Setup installieren
+        run: choco install innosetup -y --no-progress
+
+      # Der Pfad haengt an der Fassung (6 liegt unter "Program Files (x86)",
+      # 7 unter "Program Files"). Gesucht statt geraten.
+      - name: ISCC finden
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem 'C:\Program Files*\Inno Setup*\ISCC.exe' -ErrorAction SilentlyContinue |
+                  Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe nicht gefunden." }
+          "ISCC=$($iscc.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $iscc.FullName /? | Select-Object -First 1
+
+      - name: Installationspaket bauen
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & $env:ISCC "/DFassung=$env:FASSUNG" "/DQuelle=$PWD\BIN" "/DZiel=$PWD\dist" "$PWD\setup\SyncTClient.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC brach mit $LASTEXITCODE ab." }
+
+          $paket = Get-ChildItem dist\*.exe | Select-Object -First 1
+          if (-not $paket) { throw "Kein Installationspaket entstanden." }
+          "PAKET=$($paket.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "Paket: $($paket.Name), {0:N1} MB" -f ($paket.Length / 1MB)
+
+      - name: Freigabe anlegen
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Hinweise aus dem Changelog, wie beim Veroeffentlichen von Hand.
+          # Fehlt der Abschnitt, nimmt gh die Betreffe der Commits.
+          $text = Get-Content CHANGELOG.md -Raw
+          $muster = '(?ms)^## ' + [regex]::Escape($env:FASSUNG) + ' .*?\r?\n(.*?)(?=^## |\z)'
+          $treffer = [regex]::Match($text, $muster)
+
+          $argumente = @('release', 'create', "v$env:FASSUNG", $env:PAKET, '--title', "SyncTClient $env:FASSUNG")
+          if ($treffer.Success -and $treffer.Groups[1].Value.Trim()) {
+            $hinweise = Join-Path $env:RUNNER_TEMP 'hinweise.md'
+            [System.IO.File]::WriteAllText($hinweise, $treffer.Groups[1].Value.Trim(), (New-Object System.Text.UTF8Encoding($false)))
+            $argumente += @('--notes-file', $hinweise)
+          } else {
+            $argumente += '--generate-notes'
+          }
+
+          & gh @argumente
+          if ($LASTEXITCODE -ne 0) { throw "gh release create brach mit $LASTEXITCODE ab." }
