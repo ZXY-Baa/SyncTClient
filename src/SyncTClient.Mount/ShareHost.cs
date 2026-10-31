@@ -495,6 +495,9 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
     /// </param>
     public sealed record CacheEintrag(string Name, long Size, bool Hydriert, bool Lokal);
 
+    /// <summary>So viele Eintraege liest die Anzeige auf einmal aus dem Index.</summary>
+    private const int Seitenlaenge = 10_000;
+
     /// <summary>
     /// Was von dieser Freigabe auf das Limit ihres Datentraegers zaehlt.
     /// </summary>
@@ -510,12 +513,23 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
     /// </remarks>
     public IReadOnlyList<CacheEintrag> CacheEintraege()
     {
-        if (_index is null) return [];
+        // Nur die Referenz wird unter der Sperre genommen; das Auslesen selbst
+        // ist seitenweise und geschieht ausserhalb. So haelt eine grosse
+        // Freigabe die Sperre nicht ueber hunderttausend Zeilen, und der Index
+        // bleibt fuer die Schreiber offen.
+        PersistentFolderIndex? bestand;
+        lock (_indexGate) bestand = _index;
+        if (bestand is null) return [];
 
         var liste = new List<CacheEintrag>();
+        var nach = "";
 
-        lock (_indexGate)
-            foreach (var (name, size, _, isDirectory, _) in _index.EnumerateLight())
+        while (true)
+        {
+            var seite = bestand.EnumerateLight(nach, Seitenlaenge);
+            if (seite.Count == 0) break;
+
+            foreach (var (name, size, _, isDirectory, _) in seite)
             {
                 // Nur Dateien. Ein Verzeichnis haelt keinen Inhalt und zaehlt
                 // auf kein Limit; der Baum entsteht ohnehin aus den Pfaden.
@@ -529,6 +543,13 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
                     name, size, HatInhalt(name),
                     ModusVon(name) ?? _config.Mode == ShareMode.AlwaysLocal));
             }
+
+            // Weitergemacht bis eine Seite leer ist. Eine kurze Seite heisst
+            // nicht "Ende": die Abfrage kann Namen wieder verwerfen, deren
+            // geltende Fassung eine Loeschung ist. Erst die leere Seite sagt,
+            // dass nichts mehr kommt.
+            nach = seite[^1].Name;
+        }
 
         return liste;
     }
@@ -2064,7 +2085,13 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
         // Zeit zum Index passen, endet er nach zwei Vergleichen; das ist der
         // Normalfall fuer nahezu jeden Eintrag.
         _incoming.Clear();
-        lock (_indexGate) QueueIncoming(_index!.AllNames().ToList());
+
+        // Wie beim Cache: nur die Referenz unter der Sperre, das Auslesen
+        // selbst ausserhalb. AllNames liefert bereits eine Liste -- die noch
+        // einmal zu kopieren war ueberfluessig.
+        PersistentFolderIndex? bestand;
+        lock (_indexGate) bestand = _index;
+        if (bestand is not null) QueueIncoming(bestand.AllNames());
 
         SetPhase(SyncPhase.Cache);
         _cache.ReconcileWithDisk();
