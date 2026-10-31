@@ -1,4 +1,4 @@
-[English](README.md) · **Deutsch**
+[English](README.md) · **Deutsch** · [简体中文](README.zh-CN.md)
 
 <img src="docs/logo.png" alt="SyncTClient" width="110" height="110" align="right">
 
@@ -43,7 +43,8 @@ jedes andere Programm gleichzeitig lesen.
 > können.**
 >
 > Vollständiger Text: [Nutzungsbedingungen](setup/EULA.de.txt) — der Installer
-> zeigt sie als Seite, die vor der Installation bestätigt werden muss.
+> zeigt sie in der gewählten Sprache als Seite, die vor der Installation
+> bestätigt werden muss.
 
 <img src="docs/interface.png" alt="Das Hauptfenster von SyncTClient" width="1266" height="813">
 
@@ -191,7 +192,7 @@ ein neues Bild, 2 ms für ein bekanntes. Der Platzhalter bleibt dabei stehen.
 - Übertragungen mit Fortschritt, Durchsatzdiagramm, Rückstand in beide
   Richtungen
 - Protokollfenster, Symbol im Infobereich mit Zustandsplakette
-- Deutsch und Englisch, helles und dunkles Thema
+- Deutsch, Englisch und Chinesisch, helles und dunkles Thema
 - Tagessicherung der Konfiguration samt Gerätezertifikat
 - Auf Wunsch ein Blick nach einer neueren Fassung — nie, bei jedem Start, wöchentlich
   oder monatlich. Abgefragt wird nur, welche Freigabe auf GitHub die neueste ist:

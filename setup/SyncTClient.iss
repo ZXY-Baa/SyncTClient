@@ -1,4 +1,4 @@
-; Das Installationspaket fuer SyncTClient.
+﻿; Das Installationspaket fuer SyncTClient.
 ;
 ; Uebersetzt wird es von tools\Veroeffentlichen.ps1; die Fassung kommt von
 ; dort und steht nicht hier, sonst gaebe es zwei Stellen mit derselben Zahl:
@@ -74,10 +74,11 @@ WizardStyle=modern
 ; diese Seite -- in der Lizenz steht er auch, aber dort liest ihn niemand.
 Name: "deutsch"; MessagesFile: "compiler:Languages\German.isl"; LicenseFile: "EULA.de.txt"
 Name: "english"; MessagesFile: "compiler:Default.isl";           LicenseFile: "EULA.en.txt"
+Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"; LicenseFile: "EULA.zh-CN.txt"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
-Name: "autostart"; Description: "Beim Anmelden starten"; Flags: unchecked
+Name: "autostart"; Description: "{cm:StartWithWindows}"; Flags: unchecked
 
 [Files]
 ; Das ganze Veroeffentlichungsverzeichnis. Es ist self-contained -- die
@@ -89,6 +90,7 @@ Source: "{#Quelle}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cre
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "EULA.de.txt"; DestDir: "{app}"; DestName: "Nutzungsbedingungen.txt"; Flags: ignoreversion
 Source: "EULA.en.txt"; DestDir: "{app}"; DestName: "TermsOfUse.txt"; Flags: ignoreversion
+Source: "EULA.zh-CN.txt"; DestDir: "{app}"; DestName: "TermsOfUse.zh-CN.txt"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\SyncTClient"; Filename: "{app}\SyncTClient.exe"
@@ -107,3 +109,7 @@ Type: filesandordirs; Name: "{app}\synct-home"
 [Messages]
 english.WelcomeLabel2=This will install SyncTClient {#Fassung} on this computer.%n%nThe program registers its Explorer integration -- thumbnails and context menu -- itself on first start. No administrator rights are needed for that.
 deutsch.WelcomeLabel2=Damit wird SyncTClient {#Fassung} auf diesem Rechner eingerichtet.%n%nDie Einbindung in den Explorer -- Vorschaubilder und Kontextmenü -- trägt das Programm beim ersten Start selbst ein. Administratorrechte werden dafür nicht gebraucht.
+chinesesimplified.WelcomeLabel2=将在本计算机上安装 SyncTClient {#Fassung}。%n%n程序会在首次启动时自行注册资源管理器集成（缩略图和上下文菜单），不需要管理员权限。
+english.StartWithWindows=Start with Windows
+deutsch.StartWithWindows=Beim Anmelden starten
+chinesesimplified.StartWithWindows=随 Windows 启动

@@ -1,4 +1,4 @@
-**English** · [Deutsch](README.de.md)
+**English** · [Deutsch](README.de.md) · [简体中文](README.zh-CN.md)
 
 <img src="docs/logo.png" alt="SyncTClient" width="110" height="110" align="right">
 
@@ -39,8 +39,8 @@ read at the same time.
 > consequences. **Never use it without an independent, verified backup, and
 > never as the only place where data lives whose loss you could not accept.**
 >
-> Full text: [Terms of Use](setup/EULA.en.txt) · the installer shows the German
-> version, which must be accepted before installing.
+> Full text: [Terms of Use](setup/EULA.en.txt) · the installer shows it in the
+> selected language, and it must be accepted before installing.
 
 <img src="docs/interface.png" alt="The SyncTClient main window" width="1266" height="813">
 
@@ -183,7 +183,7 @@ known one. The placeholder stays a placeholder throughout.
 - Placeholder management per volume as a tree, across all shares
 - Transfers with progress, throughput chart, backlog in both directions
 - Log window, tray icon with a status badge
-- German and English, light and dark theme
+- German, English and Chinese, light and dark theme
 - Daily backup of the configuration including the device certificate
 - An optional check for a newer version — never, at every start, weekly or monthly. It asks
   GitHub which release is the newest and nothing else: nothing is downloaded,
