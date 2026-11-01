@@ -53,7 +53,12 @@ public partial class PeerManagerWindow : Window
     {
         ConnectButton.IsEnabled = _selected is not null;
         EditButton.IsEnabled = _selected is not null;
-        ConnectButton.Content = _selected?.Host.State == PeerState.Verbunden ? "Trennen" : "Verbinden";
+        // Über die Ressource, nicht als Zeichenkette: der Knopf stand im XAML
+        // schon auf S.Peers.Connect, und diese Zeile hat ihn mit einem festen
+        // deutschen Wort überschrieben.
+        ConnectButton.SetResourceReference(
+            ContentControl.ContentProperty,
+            _selected?.Host.State == PeerState.Verbunden ? "S.Peers.Disconnect" : "S.Peers.Connect");
     }
 
     private void OnAdd(object sender, RoutedEventArgs e)
