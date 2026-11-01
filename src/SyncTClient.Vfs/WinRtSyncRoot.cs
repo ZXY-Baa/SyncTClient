@@ -89,8 +89,15 @@ public static class WinRtSyncRoot
             Version = providerVersion,
 
             // Der eigentliche Grund fuer diesen Weg.
-            HydrationPolicy = StorageProviderHydrationPolicy.Partial,
-            HydrationPolicyModifier = StorageProviderHydrationPolicyModifier.StreamingAllowed,
+            //
+            // FULL statt PARTIAL, wie in SyncRoot.cs. PARTIAL sagt Windows
+            // zu, dass sich ein noch unvollstaendiger Platzhalter teilweise
+            // lesen laesst; die Shell nimmt das woertlich, liest selbst in
+            // die Datei hinein statt den Vorschau-Erzeuger zu fragen, und
+            // zeigt den Eintrag als "nur online verfuegbar", auch wenn der
+            // Inhalt laengst hier liegt.
+            HydrationPolicy = StorageProviderHydrationPolicy.Full,
+            HydrationPolicyModifier = StorageProviderHydrationPolicyModifier.None,
 
             // Wir legen alle Platzhalter selbst an.
             PopulationPolicy = StorageProviderPopulationPolicy.AlwaysFull,

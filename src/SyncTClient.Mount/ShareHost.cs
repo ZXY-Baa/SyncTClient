@@ -2056,7 +2056,7 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
     /// Elternverzeichnis und benennt den Knoten danach.
     /// 0.4: eigenes Symbol statt der Windows-Wolke.
     /// </remarks>
-    private const string SyncRootFassung = "0.4";
+    private const string SyncRootFassung = "0.5";
 
     private async Task ProjectAsync()
     {
