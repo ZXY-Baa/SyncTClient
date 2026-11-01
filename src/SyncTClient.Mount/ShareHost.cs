@@ -81,6 +81,13 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
     /// </remarks>
     private const uint Angeheftet = 0x0008_0000;
 
+    /// <summary>
+    /// FILE_ATTRIBUTE_UNPINNED: das Gegenstueck zu <see cref="Angeheftet"/>.
+    /// Jeder Platzhalter traegt eins von beiden; eine gewoehnliche Datei
+    /// traegt keins von beiden.
+    /// </summary>
+    private const uint NichtAngeheftet = 0x0010_0000;
+
     /// <summary>Groesster Block, den das Protokoll kennt: 16 MiB.</summary>
     private const int MaximumRequestSize = 16 << 20;
 
@@ -101,6 +108,39 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
         }
         catch (IOException) { return true; }
         catch (UnauthorizedAccessException) { return true; }
+    }
+
+    /// <summary>
+    /// Macht aus einer Datei, die schon dasteht, einen abgeglichenen
+    /// Platzhalter.
+    /// </summary>
+    /// <remarks>
+    /// Eine gewoehnliche Datei im Ordner ist fuer Windows keine Datei dieses
+    /// Anbieters: sie traegt keins der Anheft-Merkmale, also zeigt der
+    /// Explorer an ihr keinen Zustand und meldet sie als haengend statt als
+    /// abgeglichen. Der Inhalt bleibt dabei liegen -- aus einer Datei wird ein
+    /// gefuellter Platzhalter, kein entzogener.
+    ///
+    /// Gefragt wird nach den beiden Anheft-Merkmalen und nicht nach
+    /// <see cref="IsPlaceholder"/>: das erkennt nur entzogene Platzhalter. Ein
+    /// gefuellter traegt kein Recall-Merkmal und wuerde sonst bei jedem
+    /// Durchgang erneut umgewandelt.
+    /// </remarks>
+    private void AlsAbgeglichenKennzeichnen(string path, string name)
+    {
+        uint attributes;
+        try
+        {
+            attributes = (uint)new FileInfo(path).Attributes;
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        if ((attributes & (Angeheftet | NichtAngeheftet)) != 0) return;
+
+        _cache?.MarkInSync(name);
     }
 
     /// <summary>

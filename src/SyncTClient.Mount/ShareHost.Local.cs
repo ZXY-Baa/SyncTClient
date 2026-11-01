@@ -2563,6 +2563,7 @@ public sealed partial class ShareHost
             && previous.Size == length
             && previous.ModifiedS == modified)
         {
+            AlsAbgeglichenKennzeichnen(path, name);
             return Done(name);
         }
 
@@ -2641,10 +2642,17 @@ public sealed partial class ShareHost
             // Eintrag unser eigener, hat jemand die Zeit veraendert, und das
             // ist eine Aenderung wie jede andere: sie wird angekuendigt, mit
             // den bekannten Bloecken, ohne dass etwas uebertragen werden muss.
-            if (known.ModifiedS == modified) return Done(name);
+            if (known.ModifiedS == modified)
+            {
+                AlsAbgeglichenKennzeichnen(path, name);
+                return Done(name);
+            }
 
             if (known.ModifiedBy != OwnDeviceId.ShortId() && ZeitAngleichen(path, known))
+            {
+                AlsAbgeglichenKennzeichnen(path, name);
                 return Done(name);
+            }
         }
 
         // Zum ersten Mal gesehen, und der Inhalt ist genau der, den die
@@ -2659,6 +2667,7 @@ public sealed partial class ShareHost
             && (peer.ModifiedS == modified || ZeitAngleichen(path, peer)))
         {
             UebernehmenUndWeitergeben(peer);
+            AlsAbgeglichenKennzeichnen(path, name);
             return Done(name);
         }
 
