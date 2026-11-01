@@ -88,6 +88,12 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
     /// </summary>
     private const uint NichtAngeheftet = 0x0010_0000;
 
+    /// <summary>
+    /// FILE_ATTRIBUTE_REPARSE_POINT: daran erkennt man einen Platzhalter auch
+    /// dann, wenn ihm der Anheft-Zustand noch fehlt.
+    /// </summary>
+    private const uint PlatzhalterMerkmal = 0x0000_0400;
+
     /// <summary>Groesster Block, den das Protokoll kennt: 16 MiB.</summary>
     private const int MaximumRequestSize = 16 << 20;
 
@@ -126,7 +132,7 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
     /// gefuellter traegt kein Recall-Merkmal und wuerde sonst bei jedem
     /// Durchgang erneut umgewandelt.
     /// </remarks>
-    private void AlsAbgeglichenKennzeichnen(string path, string name)
+    private bool AlsAbgeglichenKennzeichnen(string path, string name)
     {
         uint attributes;
         try
@@ -135,12 +141,68 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
         }
         catch (Exception)
         {
-            return;
+            return false;
         }
 
-        if ((attributes & (Angeheftet | NichtAngeheftet)) != 0) return;
+        // Ohne Anheft-Zustand zeigt Windows an einem Platzhalter kein
+        // Ueberlagerungssymbol; siehe die Anmerkung an SetPinned. Fehlt er,
+        // wird er nachgetragen -- auch an einem Platzhalter, der schon steht.
+        var angeheftet = (attributes & (Angeheftet | NichtAngeheftet)) != 0;
+        var platzhalter = (attributes & PlatzhalterMerkmal) != 0;
 
-        _cache?.MarkInSync(name);
+        if (platzhalter)
+        {
+            if (!angeheftet)
+            {
+                try { _mount?.SetPinned(path, false); }
+                catch (Exception) { }
+            }
+
+            return false;
+        }
+
+        if (angeheftet) return false;
+
+        if (_cache?.MarkInSync(name) != true) return false;
+
+        try { _mount?.SetPinned(path, false); }
+        catch (Exception) { }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Kennzeichnet den ganzen Bestand, wo noch eine gewoehnliche Datei steht.
+    /// </summary>
+    /// <remarks>
+    /// Der Durchgang ueber den Ordner tut dasselbe, kommt aber nur an Dateien,
+    /// die sich geaendert haben. Wer seit dem Einhaengen unveraendert
+    /// dasteht, wird dort nie betrachtet und bliebe eine gewoehnliche Datei --
+    /// fuer Windows keine Datei dieses Anbieters, und der Explorer meldet ihn
+    /// als haengend statt als abgeglichen.
+    ///
+    /// Laeuft einmal beim Einhaengen. Was schon ein Platzhalter ist, kostet
+    /// einen Blick auf die Attribute und sonst nichts.
+    /// </remarks>
+    private void BestandKennzeichnen()
+    {
+        if (_cache is null || _index is null) return;
+
+        var gekennzeichnet = 0;
+        try
+        {
+            foreach (var name in _index.AllNames())
+            {
+                if (AlsAbgeglichenKennzeichnen(LocalPathOf(name), name)) gekennzeichnet++;
+            }
+        }
+        catch (Exception ex)
+        {
+            _log($"[{FolderId}] Bestand kennzeichnen: {ex.Message}");
+        }
+
+        if (gekennzeichnet > 0)
+            _log($"[{FolderId}] {gekennzeichnet} vorhandene Dateien als abgeglichen gekennzeichnet.");
     }
 
     /// <summary>
@@ -1584,6 +1646,11 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
                 PurgeIgnored();
                 await ProjectAsync().ConfigureAwait(false);
             }).ConfigureAwait(false);
+
+            // Erst wenn Wurzel, Cache und Verbindung stehen: was schon
+            // dasteht, wird jetzt zum gefuellten Platzhalter.
+            BestandKennzeichnen();
+
             _log($"[{FolderId}] Platzhalter vorbereitet in {uhr.ElapsedMilliseconds} ms.");
             }
             finally
