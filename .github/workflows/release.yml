@@ -87,7 +87,7 @@ jobs:
         run: |
           # Hinweise aus dem Changelog, wie beim Veroeffentlichen von Hand.
           # Fehlt der Abschnitt, nimmt gh die Betreffe der Commits.
-          $text = Get-Content CHANGELOG.md -Raw
+          $text = [System.IO.File]::ReadAllText((Resolve-Path CHANGELOG.md), [System.Text.Encoding]::UTF8)
           $muster = '(?ms)^## ' + [regex]::Escape($env:FASSUNG) + ' .*?\r?\n(.*?)(?=^## |\z)'
           $treffer = [regex]::Match($text, $muster)
 

@@ -64,6 +64,24 @@ jobs:
       - name: Veroeffentlichen
         run: dotnet publish src/SyncTClient.Gui/SyncTClient.Gui.csproj -c Release -p:PublishProfile=FolderProfile -p:SelfContained=true --nologo
 
+      # Baut das Installationspaket zur Probe. Es wird nicht veroeffentlicht,
+      # aber so bricht jeder Lauf ab, der die .iss oder die Sprachdateien
+      # zerbrochen haette -- ein Fehler, der sonst erst beim Etikett auffiele.
+      - name: Inno Setup installieren
+        run: choco install innosetup -y --no-progress
+
+      - name: Installationspaket probeweise bauen
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem 'C:\Program Files*\Inno Setup*\ISCC.exe' -ErrorAction SilentlyContinue |
+                  Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe nicht gefunden." }
+          $fassung = (Select-String -Path Directory.Build.props -Pattern '<Version>([^<]+)</Version>').Matches[0].Groups[1].Value
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & $iscc.FullName "/DFassung=$fassung" "/DQuelle=$PWD\BIN" "/DZiel=$PWD\dist" "$PWD\setup\SyncTClient.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC brach mit $LASTEXITCODE ab." }
+          Get-ChildItem dist\*.exe | ForEach-Object { "Paket: $($_.Name), {0:N1} MB" -f ($_.Length / 1MB) }
+
       - name: Programm als Artefakt ablegen
         uses: actions/upload-artifact@v4
         with:
