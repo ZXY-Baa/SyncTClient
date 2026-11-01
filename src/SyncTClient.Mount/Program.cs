@@ -132,6 +132,7 @@ if (Arg("--providertest") is { } probeTarget)
 
 if (args.Contains("--clean-winrt")) return CleanWinRt();
 if (Arg("--reset") is { } pathToReset) return Reset(pathToReset);
+if (Arg("--revert") is { } pathToRevert) return RevertAll(pathToRevert);
 if (Arg("--unregister") is { } pathToRelease)
 {
     SyncRoot.Unregister(pathToRelease);
@@ -166,6 +167,7 @@ if (!File.Exists(configPath))
           --config <pfad>       andere Konfigurationsdatei
           --reset <pfad>        haengengebliebenen Sync-Root loeschen
           --unregister <pfad>   Sync-Root nur abmelden
+          --revert <pfad>       Platzhalter aufloesen, Dateien bleiben
           --clean-winrt         verwaiste WinRT-Registrierungen abmelden
           --blockcheck          eigene Blocklisten gegen den Index pruefen
           --announce --folder <ordner-id> --file <relativer/name>
@@ -492,6 +494,28 @@ static string? BlockDifference(BepFileInfo announced, int blockSize, IReadOnlyLi
 
 static string Short(ReadOnlySpan<byte> value)
     => Convert.ToHexStringLower(value[..Math.Min(8, value.Length)]) + (value.Length > 8 ? "..." : "");
+
+// Der Treiber loest Platzhalter nur, solange ein Anbieter verbunden ist.
+// Deshalb wird kurz ein leerer Anbieter verbunden, alles zurueckgenommen und
+// wieder getrennt. Der Inhalt bleibt dabei liegen; nur der Platzhalter geht.
+static int RevertAll(string path)
+{
+    try
+    {
+        using var repair = new CloudFilterMount(path, new EmptySource(), Console.WriteLine);
+        repair.Connect();
+        var offen = repair.RevertPlaceholders();
+        Console.WriteLine(offen == 0
+            ? $"Zurueckgenommen: {path}"
+            : $"Zurueckgenommen mit Rest: {offen} Platzhalter blieben stehen.");
+        return offen == 0 ? 0 : 1;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Zuruecknehmen fehlgeschlagen: {ex.Message}");
+        return 1;
+    }
+}
 
 static int CleanWinRt()
 {
