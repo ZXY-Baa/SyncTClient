@@ -137,6 +137,14 @@ public sealed class CloudFilterMount : IDisposable
         // uebergangen.
         ReportIdle();
 
+        // Und die Wurzel selbst. Sie entsteht beim Anmelden des Sync-Roots,
+        // und das Anmelden ueber den Speicheranbieter setzt ihren
+        // Abgleichzustand nicht: sie steht danach als "ausstehend" da, und
+        // der Explorer zeigt das ueber den ganzen Ordner. Setzen darf ihn nur
+        // der Anbieter -- ein fremder Prozess bekommt
+        // ERROR_CLOUD_FILE_ACCESS_DENIED.
+        MarkiereWurzelAbgeglichen();
+
         _log?.Invoke($"Sync-Root verbunden: {_rootPath}");
     }
 
@@ -160,6 +168,51 @@ public sealed class CloudFilterMount : IDisposable
         var result = PInvoke.CfUpdateSyncProviderStatus(_connectionKey, status);
         if (result.Failed)
             _log?.Invoke($"Anbieterstatus {status}: 0x{(uint)result.Value:X8}");
+    }
+    /// <summary>Setzt den Abgleichzustand der Wurzel auf "abgeglichen".</summary>
+    /// <remarks>
+    /// Ohne das meldet der Explorer den Ordner dauerhaft als ausstehend,
+    /// gleich wie sauber die Dateien darin sind: er richtet sich nach dem
+    /// Zustand der Wurzel, nicht nach dem der Kinder. Setzen darf ihn nur der
+    /// Anbieter selbst -- ein fremder Prozess bekommt
+    /// ERROR_CLOUD_FILE_ACCESS_DENIED. Siehe
+    /// https://learn.microsoft.com/en-us/answers/questions/1179273/
+    /// </remarks>
+    private unsafe void MarkiereWurzelAbgeglichen()
+    {
+        try
+        {
+            // Ein Verzeichnis laesst sich nur mit FILE_FLAG_BACKUP_SEMANTICS
+            // oeffnen; File.OpenHandle kennt die Fahne nicht.
+            using var handle = PInvoke.CreateFile(
+                _rootPath,
+                (uint)FILE_ACCESS_RIGHTS.FILE_READ_ATTRIBUTES,
+                FILE_SHARE_MODE.FILE_SHARE_READ | FILE_SHARE_MODE.FILE_SHARE_WRITE
+                    | FILE_SHARE_MODE.FILE_SHARE_DELETE,
+                null,
+                FILE_CREATION_DISPOSITION.OPEN_EXISTING,
+                FILE_FLAGS_AND_ATTRIBUTES.FILE_FLAG_BACKUP_SEMANTICS,
+                null);
+
+            if (handle.IsInvalid)
+            {
+                _log?.Invoke($"Wurzel oeffnen: 0x{(uint)Marshal.GetLastWin32Error():X8}");
+                return;
+            }
+
+            var result = PInvoke.CfSetInSyncState(
+                handle,
+                CF_IN_SYNC_STATE.CF_IN_SYNC_STATE_IN_SYNC,
+                CF_SET_IN_SYNC_FLAGS.CF_SET_IN_SYNC_FLAG_NONE,
+                null);
+
+            if (result.Failed)
+                _log?.Invoke($"Wurzel als abgeglichen setzen: 0x{(uint)result.Value:X8}");
+        }
+        catch (Exception ex)
+        {
+            _log?.Invoke($"Wurzel als abgeglichen setzen: {ex.Message}");
+        }
     }
 
     // ------------------------------------------------------------ Platzhalter

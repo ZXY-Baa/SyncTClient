@@ -134,6 +134,11 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
     /// </remarks>
     private bool AlsAbgeglichenKennzeichnen(string path, string name)
     {
+        // Verzeichnisse bleiben, wie sie sind. Sie zu Platzhaltern zu machen
+        // ist der Weg, der beim Anlegen von Eintraegen darin zu
+        // ERROR_CLOUD_FILE_METADATA_CORRUPT fuehrt; siehe CreatePlaceholders.
+        if (Directory.Exists(path)) return false;
+
         uint attributes;
         try
         {
