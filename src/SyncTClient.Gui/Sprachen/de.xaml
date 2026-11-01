@@ -280,6 +280,10 @@ Angeheftete Dateien und Shares im Modus „vollständig lokal“ bleiben erhalte
   <s:String x:Key="I.Connected">verbunden</s:String>
   <s:String x:Key="I.Error">Fehler</s:String>
   <s:String x:Key="I.ErrorWith">Fehler: {0}</s:String>
+  <s:String x:Key="I.Canceled">abgebrochen</s:String>
+  <s:String x:Key="I.Timeout">Zeitueberschreitung</s:String>
+  <s:String x:Key="I.NetworkError">Netzwerkfehler</s:String>
+  <s:String x:Key="I.NoAddress">keine Adresse</s:String>
   <s:String x:Key="I.Disconnected">getrennt</s:String>
 
   <s:String x:Key="S.FolderId">Ordner-ID {0}</s:String>

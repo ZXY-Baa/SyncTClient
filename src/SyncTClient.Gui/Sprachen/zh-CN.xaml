@@ -278,6 +278,10 @@
   <s:String x:Key="I.Connected">已连接</s:String>
   <s:String x:Key="I.Error">错误</s:String>
   <s:String x:Key="I.ErrorWith">错误：{0}</s:String>
+  <s:String x:Key="I.Canceled">已取消</s:String>
+  <s:String x:Key="I.Timeout">超时</s:String>
+  <s:String x:Key="I.NetworkError">网络错误</s:String>
+  <s:String x:Key="I.NoAddress">无地址</s:String>
   <s:String x:Key="I.Disconnected">已断开</s:String>
 
   <s:String x:Key="S.FolderId">文件夹 ID {0}</s:String>

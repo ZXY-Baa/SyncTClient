@@ -288,6 +288,10 @@ Pinned files and shares in “keep fully local” mode are kept. No data is lost
   <s:String x:Key="I.Connected">connected</s:String>
   <s:String x:Key="I.Error">error</s:String>
   <s:String x:Key="I.ErrorWith">error: {0}</s:String>
+  <s:String x:Key="I.Canceled">canceled</s:String>
+  <s:String x:Key="I.Timeout">timed out</s:String>
+  <s:String x:Key="I.NetworkError">network error</s:String>
+  <s:String x:Key="I.NoAddress">no address</s:String>
   <s:String x:Key="I.Disconnected">disconnected</s:String>
 
   <s:String x:Key="S.FolderId">Folder ID {0}</s:String>

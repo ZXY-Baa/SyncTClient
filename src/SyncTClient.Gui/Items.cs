@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using SyncTClient.Mount;
 
@@ -16,10 +16,28 @@ public sealed class PeerItem(PeerHost host) : INotifyPropertyChanged
     {
         PeerState.Verbindet => App.S("I.Connecting"),
         PeerState.Verbunden => App.S("I.Connected"),
-        PeerState.Fehler => Host.LastError is null
-            ? App.S("I.Error")
-            : App.S("I.ErrorWith", Kurz(Host.LastError)),
+        PeerState.Fehler => Fehlertext,
         _ => App.S("I.Disconnected")
+    };
+
+    /// <summary>
+    /// Der Grund des Fehlschlags, so weit er sich benennen laesst.
+    /// </summary>
+    /// <remarks>
+    /// Fuer die bekannten Faelle steht hier ein eigener Satz. Nur fuer den Rest
+    /// wird die Meldung der Ausnahme gezeigt -- sie kommt aus dem
+    /// Laufzeitpaket, dessen Sprachdateien nicht mitgeliefert werden, und
+    /// stuende sonst auf Englisch da.
+    /// </remarks>
+    private string Fehlertext => Host.Fehlerart switch
+    {
+        PeerFehler.Abbruch => App.S("I.Canceled"),
+        PeerFehler.Zeitueberschreitung => App.S("I.Timeout"),
+        PeerFehler.Netz => App.S("I.NetworkError"),
+        PeerFehler.Adresse => App.S("I.NoAddress"),
+        _ => Host.LastError is null
+            ? App.S("I.Error")
+            : App.S("I.ErrorWith", Kurz(Host.LastError))
     };
 
     public string Detail => Host.State == PeerState.Verbunden

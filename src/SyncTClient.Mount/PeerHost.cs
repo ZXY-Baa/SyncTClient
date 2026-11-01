@@ -13,6 +13,22 @@ public enum PeerState
     Fehler
 }
 
+/// <summary>Woran der letzte Verbindungsversuch gescheitert ist.</summary>
+/// <remarks>
+/// Die Meldung in <c>LastError</c> ist die Meldung der Ausnahme, und die kommt
+/// bei Ausnahmen aus dem Laufzeitpaket auf Englisch: dessen Sprachdateien
+/// werden nicht mitgeliefert. Fuer die Anzeige zaehlt deshalb die Art.
+/// </remarks>
+public enum PeerFehler
+{
+    Keiner,
+    Abbruch,
+    Zeitueberschreitung,
+    Netz,
+    Adresse,
+    Sonstiges
+}
+
 /// <summary>Ein Ordner, den die Gegenstelle mit uns teilt.</summary>
 /// <param name="Accepted">Ob wir ihn schon uebernommen haben.</param>
 /// <summary>
@@ -98,6 +114,9 @@ public sealed class PeerHost : IAsyncDisposable
     }
 
     public string? LastError { get; private set; }
+
+    /// <summary>Woran der letzte Versuch gescheitert ist.</summary>
+    public PeerFehler Fehlerart { get; private set; }
 
     /// <summary>Der Kern der Meldung, wenn die Gegenstelle uns noch fuehrt.</summary>
     public const string HandschlagGeschlossen = "die Gegenstelle hat den Handschlag aber geschlossen";
@@ -651,6 +670,7 @@ public sealed class PeerHost : IAsyncDisposable
         _ersteAnkuendigung = true;
         State = PeerState.Verbindet;
         LastError = null;
+        Fehlerart = PeerFehler.Keiner;
         return _cts.Token;
     }
 
@@ -661,6 +681,14 @@ public sealed class PeerHost : IAsyncDisposable
         if (sitzung != _sitzung) return;
 
         LastError = ex.Message;
+        Fehlerart = ex switch
+        {
+            OhneAdresseException => PeerFehler.Adresse,
+            OperationCanceledException => PeerFehler.Abbruch,
+            TimeoutException => PeerFehler.Zeitueberschreitung,
+            IOException or System.Net.Sockets.SocketException => PeerFehler.Netz,
+            _ => PeerFehler.Sonstiges
+        };
         State = PeerState.Fehler;
 
         // Fehlt die Adresse, steht der Grund schon da -- die Suche hat ihn
