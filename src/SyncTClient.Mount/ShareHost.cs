@@ -163,8 +163,9 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
             return false;
         }
 
-        if (angeheftet) return false;
-
+        // Gewoehnliche Datei -- auch eine, die von einem frueheren Platzhalter
+        // noch das Anheft-Merkmal traegt. Fuer den Platzhalter zaehlt allein
+        // das Reparse-Merkmal.
         if (_cache?.MarkInSync(name) != true) return false;
 
         try { _mount?.SetPinned(path, false); }
