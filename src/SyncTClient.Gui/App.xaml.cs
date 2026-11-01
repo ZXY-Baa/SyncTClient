@@ -151,6 +151,23 @@ public partial class App : Application
         ApplyTheme(null);
         ApplyLanguage(null);
 
+        // Windows meldet einen Wechsel des Farbschemas. Ohne dieses Zuhoeren
+        // bliebe die Anwendung beim alten: die eigenen Woerterbuecher werden
+        // nur in ApplyTheme getauscht, und ThemeMode.System allein zieht nur
+        // die Farben nach, die das Thema selbst mitbringt -- deshalb aenderte
+        // sich bisher nur die Schriftfarbe.
+        SystemEvents.UserPreferenceChanged += (_, args) =>
+        {
+            if (args.Category is not (UserPreferenceCategory.General or UserPreferenceCategory.Color))
+                return;
+
+            // Eine feste Wahl bleibt stehen; nur "dem System folgen" zieht mit.
+            if (!string.IsNullOrEmpty(_themeWahl)) return;
+            if (SystemPrefersDark() == _themeDunkel) return;
+
+            Current?.Dispatcher.BeginInvoke(() => ApplyTheme(_themeWahl));
+        };
+
         // Legt die Zustandsplaketten als Bild ab und beendet sich wieder.
         // Ohne das laesst sich ihre Lesbarkeit nur im Infobereich beurteilen,
         // also erst nachdem jemand das Programm gestartet hat.
@@ -203,15 +220,25 @@ public partial class App : Application
         bild.Save(System.IO.Path.GetFullPath(pfad), System.Drawing.Imaging.ImageFormat.Png);
     }
 
+    /// <summary>Zuletzt gesetzte Wahl; leer heisst: dem System folgen.</summary>
+    private static string? _themeWahl;
+
+    /// <summary>Ob zuletzt dunkel gesetzt wurde.</summary>
+    private static bool _themeDunkel;
+
     /// <summary>Setzt das Farbschema. Leer bedeutet: der Einstellung des Systems folgen.</summary>
     public static void ApplyTheme(string? theme)
     {
+        _themeWahl = theme;
+
         var dark = theme switch
         {
             "Dunkel" => true,
             "Hell" => false,
             _ => SystemPrefersDark()
         };
+
+        _themeDunkel = dark;
 
         Swap(ref _theme, dark ? "Themen/Dunkel.xaml" : "Themen/Hell.xaml");
 
