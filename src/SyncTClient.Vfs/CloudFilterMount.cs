@@ -772,7 +772,9 @@ public sealed class CloudFilterMount : IDisposable
                 // Was nicht entstanden ist, wird auch nicht angefasst.
                 if (infos[i].Result.Value != 0) continue;
 
-                MarkUnpinned(Path.Combine(baseDirectory, LeafOf(entries[i].RelativePath)));
+                // Kein Anheft-Zustand setzen. Ein Platzhalter ohne Zustand ist
+                // der Normalfall; "nicht angeheftet" gehoert dorthin, wo wirklich
+                // Platz freigegeben wurde.
             }
 
             return (int)processed;

@@ -146,30 +146,15 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
             return false;
         }
 
-        // Ohne Anheft-Zustand zeigt Windows an einem Platzhalter kein
-        // Ueberlagerungssymbol; siehe die Anmerkung an SetPinned. Fehlt er,
-        // wird er nachgetragen -- auch an einem Platzhalter, der schon steht.
-        var angeheftet = (attributes & (Angeheftet | NichtAngeheftet)) != 0;
+        // Fuer den Platzhalter zaehlt allein das Reparse-Merkmal. Der
+        // Anheft-Zustand bleibt unberuehrt: ihn zu setzen, wo niemand etwas
+        // angeheftet oder freigegeben hat, laesst den Explorer einen Eintrag,
+        // dessen Inhalt hier liegt, als "nur online verfuegbar" zeigen.
         var platzhalter = (attributes & PlatzhalterMerkmal) != 0;
 
-        if (platzhalter)
-        {
-            if (!angeheftet)
-            {
-                try { _mount?.SetPinned(path, false); }
-                catch (Exception) { }
-            }
+        if (platzhalter) return false;
 
-            return false;
-        }
-
-        // Gewoehnliche Datei -- auch eine, die von einem frueheren Platzhalter
-        // noch das Anheft-Merkmal traegt. Fuer den Platzhalter zaehlt allein
-        // das Reparse-Merkmal.
         if (_cache?.MarkInSync(name) != true) return false;
-
-        try { _mount?.SetPinned(path, false); }
-        catch (Exception) { }
 
         return true;
     }

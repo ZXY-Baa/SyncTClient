@@ -38,8 +38,8 @@ public static class PinStateTool
         var full = Path.GetFullPath(path);
         var targets = Directory.Exists(full)
             ? (recurse
-                ? Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories)
-                : Directory.EnumerateFiles(full))
+                ? Directory.EnumerateFileSystemEntries(full, "*", SearchOption.AllDirectories)
+                : Directory.EnumerateFileSystemEntries(full))
             : [full];
 
         int done = 0, failed = 0;
@@ -59,10 +59,32 @@ public static class PinStateTool
 
     private static SafeFileHandle? Open(string file)
     {
-        try { return File.OpenHandle(file, FileMode.Open, FileAccess.Write, FileShare.ReadWrite); }
+        try
+        {
+            // Ein Verzeichnis laesst sich nur mit FILE_FLAG_BACKUP_SEMANTICS
+            // oeffnen; File.OpenHandle kennt die Fahne nicht.
+            if (Directory.Exists(file))
+            {
+                var handle = CreateFileW(
+                    file,
+                    0x0100,       // FILE_WRITE_ATTRIBUTES
+                    0x00000007,   // SHARE_READ | SHARE_WRITE | SHARE_DELETE
+                    0, 3,         // OPEN_EXISTING
+                    0x02000000,   // FILE_FLAG_BACKUP_SEMANTICS
+                    0);
+
+                return handle.IsInvalid ? null : handle;
+            }
+
+            return File.OpenHandle(file, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+        }
         catch (IOException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
     }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileW(
+        string name, uint access, uint share, nint security, uint disposition, uint flags, nint template);
 
     [DllImport("cldapi.dll", PreserveSig = true)]
     private static extern int CfSetPinState(SafeFileHandle file, uint state, uint flags, nint overlapped);
