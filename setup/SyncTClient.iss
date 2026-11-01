@@ -67,8 +67,6 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 
-
-
 [Languages]
 ; Die Nutzungsbedingungen haengen an der Sprache. Inno zeigt sie als eigene
 ; Seite mit den Schaltern "Ich akzeptiere" / "Ich akzeptiere nicht"; ohne
@@ -124,12 +122,3 @@ Filename: "{app}\SyncTClient.exe"; Description: "{cm:LaunchProgram,SyncTClient}"
 ; Was das Programm zur Laufzeit neben sich anlegt. Ohne diese Zeilen bleibt
 ; das Verzeichnis nach dem Entfernen stehen.
 Type: filesandordirs; Name: "{app}\synct-home"
-
-[Code]
-procedure InitializeWizard;
-begin
-  { Inno legt den Seitentitel 16 Punkte weiter links an als die Unterzeile.
-    Im modernen Stil faellt das als schiefe Kante auf, deshalb beginnen
-    beide hier an derselben Stelle. }
-  WizardForm.PageNameLabel.Left := WizardForm.PageDescriptionLabel.Left;
-end;
