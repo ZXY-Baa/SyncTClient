@@ -225,9 +225,7 @@ public sealed class HydrationCache
     {
         try
         {
-            using var handle = File.OpenHandle(
-                FullPath(relativePath), FileMode.Open, FileAccess.ReadWrite,
-                FileShare.ReadWrite | FileShare.Delete);
+            using var handle = Oeffnen(FullPath(relativePath));
 
             return Kennzeichnen(handle, relativePath);
         }
@@ -236,6 +234,35 @@ public sealed class HydrationCache
             _log?.Invoke($"  \"{relativePath}\" liess sich nicht als abgeglichen kennzeichnen: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>Oeffnet eine Datei oder ein Verzeichnis zum Kennzeichnen.</summary>
+    /// <remarks>
+    /// Ein Verzeichnis laesst sich nicht mit File.OpenHandle oeffnen; es
+    /// braucht FILE_FLAG_BACKUP_SEMANTICS. Sonst ist es derselbe Handgriff
+    /// wie bei einer Datei.
+    /// </remarks>
+    private static unsafe SafeFileHandle Oeffnen(string pfad)
+    {
+        if (!Directory.Exists(pfad))
+            return File.OpenHandle(
+                pfad, FileMode.Open, FileAccess.ReadWrite,
+                FileShare.ReadWrite | FileShare.Delete);
+
+        var handle = PInvoke.CreateFile(
+            pfad,
+            (uint)(FILE_ACCESS_RIGHTS.FILE_READ_ATTRIBUTES | FILE_ACCESS_RIGHTS.FILE_WRITE_ATTRIBUTES),
+            FILE_SHARE_MODE.FILE_SHARE_READ | FILE_SHARE_MODE.FILE_SHARE_WRITE
+                | FILE_SHARE_MODE.FILE_SHARE_DELETE,
+            null,
+            FILE_CREATION_DISPOSITION.OPEN_EXISTING,
+            FILE_FLAGS_AND_ATTRIBUTES.FILE_FLAG_BACKUP_SEMANTICS,
+            null);
+
+        if (handle.IsInvalid)
+            throw new IOException($"oeffnen: 0x{(uint)Marshal.GetLastWin32Error():X8}");
+
+        return handle;
     }
 
     private unsafe bool Kennzeichnen(SafeFileHandle handle, string relativePath)

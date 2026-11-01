@@ -134,10 +134,7 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
     /// </remarks>
     private bool AlsAbgeglichenKennzeichnen(string path, string name)
     {
-        // Verzeichnisse bleiben, wie sie sind. Sie zu Platzhaltern zu machen
-        // ist der Weg, der beim Anlegen von Eintraegen darin zu
-        // ERROR_CLOUD_FILE_METADATA_CORRUPT fuehrt; siehe CreatePlaceholders.
-        if (Directory.Exists(path)) return false;
+
 
         uint attributes;
         try
@@ -199,6 +196,24 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
             foreach (var name in _index.AllNames())
             {
                 if (AlsAbgeglichenKennzeichnen(LocalPathOf(name), name)) gekennzeichnet++;
+            }
+
+            // Und was im Ordner steht, aber in keinem Index auftaucht: die
+            // Marker von Syncthing etwa, und die Verzeichnisse, die eine
+            // aeltere Fassung hereingelassen hat. Der Explorer zaehlt sie
+            // sonst als ausstehend, gleich wie sauber der Rest ist.
+            //
+            // Die Versionsablage bleibt aussen vor: dort liegen alte Fassungen,
+            // die niemand abgleicht, und es koennen sehr viele sein.
+            foreach (var pfad in Directory.EnumerateFileSystemEntries(
+                         _config.LocalPath, "*", SearchOption.AllDirectories))
+            {
+                var relativ = Path.GetRelativePath(_config.LocalPath, pfad);
+                if (relativ.StartsWith(".stversions" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var name = relativ.Replace(Path.DirectorySeparatorChar, '/');
+                if (AlsAbgeglichenKennzeichnen(pfad, name)) gekennzeichnet++;
             }
         }
         catch (Exception ex)
