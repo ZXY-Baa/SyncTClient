@@ -2154,7 +2154,16 @@ public sealed partial class ShareHost
             watcher.Deleted += (_, e) => NoteLocalDelete(e.FullPath);
             watcher.Renamed += (_, e) =>
             {
-                NoteLocalDelete(e.OldFullPath);
+                // Wie beim Rueckruf der Cloud-Filter-Schicht: gehoert die
+                // Loeschung zu einem Umbenennen innerhalb der Freigabe, wartet
+                // sie darauf, dass der neue Name angekuendigt ist. Sonst geht
+                // eine Loeschung hinaus, deren Gegenstueck nie folgt -- und der
+                // Inhalt ist ueberall fort.
+                if (NameOf(e.OldFullPath) is { } alt && NameOf(e.FullPath) is { } neu)
+                    _renamedFrom[neu] = alt;
+                else
+                    NoteLocalDelete(e.OldFullPath);
+
                 NoteLocalChange(e.FullPath);
             };
 
@@ -2531,7 +2540,12 @@ public sealed partial class ShareHost
         // Nach einem gewonnenen Konflikt muss die Datei hinaus, obwohl sich an
         // ihr nichts geaendert hat. Geaendert hat sich, was die Gegenstelle
         // von ihr weiss.
-        var erzwungen = _force.TryRemove(name, out _);
+        // Nicht entfernen, nur nachsehen. Faellt das Lesen unten aus (eine
+        // gesperrte Datei, direkt nach einem Konflikt gut moeglich), kommt der
+        // Name ueber Retry zurueck -- und ohne den Vermerk traefe ihn beim
+        // naechsten Mal die Abkuerzung "Groesse und Zeit unveraendert": die
+        // Datei ginge nie hinaus. Entfernt wird er erst, wenn der Eintrag steht.
+        var erzwungen = _force.ContainsKey(name);
 
         // Groesse und Zeit zuerst. Windows meldet jedes geschlossene Handle,
         // auch nach reinem Lesen. Ohne diesen Vergleich wuerde jede geoeffnete
@@ -2556,12 +2570,19 @@ public sealed partial class ShareHost
         // braucht es: erst wenn sie zu der passt, die wir fuehren, darf der
         // Eintrag angekuendigt werden. Das kostet einmal Lesen je Datei --
         // einmal, denn danach hat sie ihre Nummer.
+        // Ein Eintrag, der als "hier nicht vorhanden" angekuendigt wurde, gilt
+        // nicht als angekuendigt: die Gegenstelle zaehlt uns dann nicht als
+        // Halter. Ist die Datei wieder da -- und sie ist es, sonst stuende sie
+        // oben nicht --, muss sie mit Bloecken neu hinaus. Ebenso ein Eintrag
+        // ohne Blockliste: der beweist nichts ueber den Inhalt.
         if (!erzwungen
             && _index!.TryGetLocal(name, out var previous)
             && !previous.Deleted
+            && !previous.Invalid
             && previous.Sequence > 0
             && previous.Size == length
-            && previous.ModifiedS == modified)
+            && previous.ModifiedS == modified
+            && (length == 0 || previous.Blocks.Count > 0))
         {
             AlsAbgeglichenKennzeichnen(path, name);
             return Done(name);
@@ -2668,6 +2689,10 @@ public sealed partial class ShareHost
         {
             UebernehmenUndWeitergeben(peer);
             AlsAbgeglichenKennzeichnen(path, name);
+
+            // Der Inhalt ist der der Gegenstelle; ein Zwang zur eigenen
+            // Fassung ist damit erledigt.
+            _force.TryRemove(name, out _);
             return Done(name);
         }
 
@@ -2704,6 +2729,9 @@ public sealed partial class ShareHost
         // vergeben. Umgekehrt waere die Datei angekuendigt, ohne dass wir sie
         // fuehren, und die naechste Anfrage danach wuerde abgelehnt.
         Store(file, StateAnnounced);
+
+        // Jetzt ist der Zwang eingeloest. Erst hier, nicht vorher: siehe oben.
+        if (erzwungen) _force.TryRemove(name, out _);
 
         _attempts.TryRemove(name, out _);
         Angekuendigt(name);
@@ -3054,6 +3082,14 @@ public sealed partial class ShareHost
 
         _attempts.TryRemove(name, out _);
         _log($"[{FolderId}] \"{name}\" liess sich nach {MaximumAttempts} Versuchen nicht lesen: {ex.Message}");
+
+        // Nicht fallen lassen. Eine Datei, die laenger gesperrt bleibt -- eine
+        // Datenbank, ein Katalog, eine .pst --, haette danach nur diese Zeile.
+        // Der Durchgang ueber den Ordner uebersieht sie, solange Groesse und
+        // Zeit zum Eintrag passen, und die Aenderung ginge nie hinaus.
+        // Mit Abstand erneut versuchen; die Zahl der Versuche beginnt dabei
+        // von vorn.
+        Zurueckstellen(name, DateTime.UtcNow + TimeSpan.FromMinutes(5));
     }
 
     /// <summary>
@@ -3145,7 +3181,7 @@ public sealed partial class ShareHost
             return [];
         }
 
-        var candidates = new List<(string Name, FileInfoType Type, Vector? Version)>();
+        var candidates = new List<(string Merken, string Name, FileInfoType Type, Vector? Version)>();
 
         var jetzt = DateTime.UtcNow;
 
@@ -3156,8 +3192,6 @@ public sealed partial class ShareHost
             // Taucht der Name bis dahin wieder auf, nimmt NoteLocalChange ihn
             // hier heraus, und die Loeschung hat nie stattgefunden.
             if (!_removed.TryGetValue(name, out var faellig) || faellig > jetzt) continue;
-
-            _removed.TryRemove(name, out _);
 
             // Dritte Sicherung: was wir ausserhalb der Auswahl selbst
             // entfernt haben, ist keine Loeschung. Siehe NoteLocalDelete.
@@ -3179,23 +3213,32 @@ public sealed partial class ShareHost
             var known = LocalCopy(announced) ?? PeerCopy(announced);
             if (known is null || known.Deleted) continue;
 
-            candidates.Add((announced, known.Type, known.Version));
+            candidates.Add((name, announced, known.Type, known.Version));
         }
 
         if (candidates.Count == 0) return [];
 
         // Vierte Sicherung: eine grosse Zahl auf einmal ist fast nie eine
         // Loeschung.
+        // Gesendet wird trotzdem, was ins Mass passt; der Rest bleibt
+        // vorgemerkt. Frueher ging in diesem Fall gar nichts hinaus, und die
+        // Namen waren schon aus der Vormerkung genommen: sie kamen nie wieder,
+        // die Gegenstellen behielten die Dateien, und der Rueckstand blieb
+        // stehen. Innerhalb weniger Takte holt der Rest nach.
         if (candidates.Count > MaximumDeletions)
         {
             _log($"[{FolderId}] {candidates.Count} Loeschungen in einem Durchgang -- " +
-                 $"mehr als {MaximumDeletions}, deshalb nicht gesendet.");
-            return [];
+                 $"gesendet werden {MaximumDeletions}, der Rest folgt im naechsten.");
+            candidates.RemoveRange(MaximumDeletions, candidates.Count - MaximumDeletions);
         }
+
+        // Erst jetzt aus der Vormerkung nehmen. Was hier nicht hinausgeht,
+        // steht beim naechsten Takt wieder an.
+        foreach (var (merken, _, _, _) in candidates) _removed.TryRemove(merken, out _);
 
         var files = new List<BepFileInfo>(candidates.Count);
 
-        foreach (var (name, type, version) in candidates)
+        foreach (var (_, name, type, version) in candidates)
         {
             // Mit dem Typ des Eintrags, der geloescht wird. Eine Loeschung
             // vom Typ Datei fuer ein Verzeichnis verwirft Syncthing:

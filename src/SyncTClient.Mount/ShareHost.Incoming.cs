@@ -519,6 +519,29 @@ public sealed partial class ShareHost
 
             if (Directory.Exists(path)) return;
 
+            // Liegt hier eine Datei, wo die Gegenstelle ein Verzeichnis meldet,
+            // laesst sich das Verzeichnis nicht anlegen -- und der Eintrag ist
+            // schon aus der Warteschlange genommen, bliebe also fuer immer
+            // stehen. Ihr Inhalt wandert in eine Konfliktkopie, dann gibt sie
+            // den Platz frei.
+            if (File.Exists(path))
+            {
+                if (!IsPlaceholder(path) && !KeepBoth(name, path))
+                {
+                    _incoming[name] = 0;
+                    return;
+                }
+
+                try { File.Delete(path); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _log($"[{FolderId}] \"{name}\": die Datei an der Stelle des Verzeichnisses " +
+                         $"liess sich nicht entfernen ({ex.Message}).");
+                    _incoming[name] = 0;
+                    return;
+                }
+            }
+
             Directory.CreateDirectory(path);
             SelbstAngelegt(name);
 
@@ -756,12 +779,12 @@ public sealed partial class ShareHost
                 return true;
 
             case ConflictResolution.Newer:
-                return mine.ModifiedS > theirs.ModifiedS
+                return EigenZeit(path, mine) > theirs.ModifiedS
                     ? KeepMine(name, theirs, "die eigene Version ist neuer")
                     : TakeTheirs(name, "die Version der Gegenstelle ist neuer");
 
             case ConflictResolution.Older:
-                return mine.ModifiedS < theirs.ModifiedS
+                return EigenZeit(path, mine) < theirs.ModifiedS
                     ? KeepMine(name, theirs, "die eigene Version ist aelter")
                     : TakeTheirs(name, "die Version der Gegenstelle ist aelter");
 
@@ -769,6 +792,32 @@ public sealed partial class ShareHost
                 // Beide bleiben. Die eigene wird zur Seite gelegt, die der
                 // Gegenstelle nimmt den Platz ein.
                 return KeepBoth(name, path);
+        }
+    }
+
+    /// <summary>Der Zeitstempel der eigenen Fassung, in Sekunden.</summary>
+    /// <remarks>
+    /// Aus dem Index kommt er nicht: der sagt, was zuletzt angekuendigt wurde.
+    /// Im Konfliktfall ist die Datei seither geaendert worden, dort stuende
+    /// also eine aeltere Zeit -- und die Gegenstelle gewaenne mit einer
+    /// Fassung, die aelter ist als das, was hier liegt.
+    ///
+    /// Ein Platzhalter hat keinen Inhalt, dessen Zeit etwas aussagte; fuer ihn
+    /// bleibt es beim Eintrag.
+    /// </remarks>
+    private static long EigenZeit(string path, BepFileInfo mine)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return mine.ModifiedS;
+            if (((uint)info.Attributes & PlatzhalterMerkmal) != 0) return mine.ModifiedS;
+
+            return new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds();
+        }
+        catch (Exception)
+        {
+            return mine.ModifiedS;
         }
     }
 
@@ -867,31 +916,56 @@ public sealed partial class ShareHost
         var stem = name[..^extension.Length];
         var target = $"{stem}.sync-conflict-{stamp}-{Geraetekennung()}{extension}";
 
-        try
-        {
-            // Kopieren, nicht verschieben. Beim Verschieben war der Name fuer
-            // die Zeit bis zum Einsetzen der Fassung der Gegenstelle leer --
-            // und bei "vollstaendig lokal" kann das dauern oder ausbleiben.
-            // Der Beobachter meldete das Verschwinden als Loeschung, die ging
-            // hinaus, und die Gegenstellen loeschten ihre Fassung. Gemessen am
-            // 13.09., 16:20:16: der Katalog "PRI-v14.lrcat" auf dem Server
-            // geloescht, ausgeloest durch eine Konfliktkopie auf einem
-            // anderen Rechner. Die eigene Fassung bleibt jetzt an ihrem Platz,
-            // bis die der Gegenstelle sie ersetzt.
-            File.Copy(path, LocalPathOf(target), overwrite: false);
-            _log($"[{FolderId}] Konflikt bei \"{name}\": die eigene Version liegt jetzt auch " +
-                 $"unter \"{target}\".");
+        // Kopieren, nicht verschieben. Beim Verschieben war der Name fuer die
+        // Zeit bis zum Einsetzen der Fassung der Gegenstelle leer -- und bei
+        // "vollstaendig lokal" kann das dauern oder ausbleiben. Der Beobachter
+        // meldete das Verschwinden als Loeschung, die ging hinaus, und die
+        // Gegenstellen loeschten ihre Fassung.
+        //
+        // Der erste Anlauf ist nicht der einzige. Derselbe Stempel trifft zwei
+        // Konflikte in derselben Sekunde, ein Ziel nahe der Pfadlaengengrenze
+        // scheitert ebenfalls, und eine offene Datei laesst sich nicht kopieren.
+        // Deshalb mit fortlaufender Nummer erneut versuchen, bevor aufgegeben
+        // wird.
+        string? grund = null;
+        var kopiert = false;
 
-            // Die abgelegte Version ist eine neue Datei in der Freigabe und
-            // wird als solche angekuendigt.
-            _dirty[target] = 0;
-            Wake();
+        for (var versuch = 0; versuch < 4 && !kopiert; versuch++)
+        {
+            var ablage = versuch == 0
+                ? target
+                : $"{stem}.sync-conflict-{stamp}-{Geraetekennung()}-{versuch}{extension}";
+
+            try
+            {
+                File.Copy(path, LocalPathOf(ablage), overwrite: false);
+                target = ablage;
+                kopiert = true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                grund = ex.Message;
+            }
         }
-        catch (IOException ex)
+
+        // Ohne Kopie ist nicht belegt, dass die eigene Fassung erhalten bleibt.
+        // Dann wird sie auch nicht ersetzt: die Gegenstelle bekommt ihre
+        // Fassung beim naechsten Takt erneut angeboten. "Die Gegenstelle gilt"
+        // waere hier eine Behauptung, die niemand geprueft hat.
+        if (!kopiert)
         {
             _log($"[{FolderId}] Konflikt bei \"{name}\": die eigene Version liess sich nicht " +
-                 $"zur Seite legen ({ex.Message}). Die Gegenstelle gilt.");
+                 $"zur Seite legen ({grund}). Sie bleibt stehen, die Gegenstelle wartet.");
+            return false;
         }
+
+        _log($"[{FolderId}] Konflikt bei \"{name}\": die eigene Version liegt jetzt auch " +
+             $"unter \"{target}\".");
+
+        // Die abgelegte Version ist eine neue Datei in der Freigabe und wird
+        // als solche angekuendigt.
+        _dirty[target] = 0;
+        Wake();
 
         return true;
     }

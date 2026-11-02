@@ -37,6 +37,22 @@ public static class FileFetcher
             .Where(x => x.block.Offset < end && x.block.Offset + x.block.Size > offset)
             .ToList();
 
+        // Die Bloecke muessen den angeforderten Bereich lueckenlos decken.
+        // Sonst blieben Loecher auf null stehen, und die Datei ginge als
+        // vollstaendig in den Bestand -- mit Bloecken, die hier niemand
+        // liefern kann. Jeder Block einzeln geprueft zu haben genuegt dafuer
+        // nicht: geprueft ist dann die Echtheit, nicht die Vollstaendigkeit.
+        var bisher = offset;
+        foreach (var (block, _) in needed.OrderBy(x => x.block.Offset))
+        {
+            if (block.Offset > bisher) break;
+            if (block.Offset + block.Size > bisher) bisher = block.Offset + block.Size;
+        }
+
+        if (bisher < end)
+            throw new InvalidDataException(
+                $"\"{file.Name}\": die Blockliste deckt {offset}+{length} nicht lueckenlos.");
+
         var result = new byte[length];
         var done = 0;
 

@@ -1313,6 +1313,14 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
         // sie nicht, gezaehlt aber schon.
         files = files.Where(f => !IsHousekeeping(f.Name));
 
+        // Und was aus der Freigabe herausfuehrt. Der Name kommt von der
+        // Gegenstelle; angewendet wird er mit LocalPathOf, einer blossen
+        // Zusammensetzung, die ".." und absolute Pfade ungeprueft uebernimmt.
+        // Angelegt, geloescht und verschoben wuerde dann ausserhalb des
+        // Ordners. ResolveInside loest den Pfad auf und haelt ihn gegen die
+        // Wurzel -- genau dafuer steht es da.
+        files = files.Where(f => ResolveInside(f.Name) is not null);
+
         if (_config.Ignored.Count > 0)
             files = files.Where(f => !_config.IsIgnored(f.Name));
 
@@ -2449,13 +2457,22 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
             // hinterlassen.
             // Bei "vollstaendig lokal" steht dort nichts mehr, was zu
             // entfernen waere -- die Datei entsteht gleich hier zum ersten Mal.
+            // Ueber NimmFort und nicht mit einem blossen Delete: bei
+            // "vollstaendig lokal" wird eine vorhandene Fassung ersetzt, und
+            // die gehoert vorher in die Ablage. Scheitert das, bleibt sie
+            // stehen und der naechste Takt versucht es erneut -- besser als
+            // eine Datei, die entfernt und dann nicht ersetzt wird.
             schritt = "den Platzhalter entfernen";
-            if (File.Exists(path)) File.Delete(path);
+            if (File.Exists(path) && !NimmFort(name, path))
+                throw new IOException("die bisherige Fassung liess sich nicht ablegen.");
 
             schritt = "die Datei einsetzen";
-            File.Move(temp, path);
 
+            // Vor dem Einsetzen, nicht danach: ein Beobachterlauf dazwischen
+            // saehe eine neue Datei und naehme eine vorgemerkte Loeschung
+            // zurueck.
             SelbstAngelegt(name);
+            File.Move(temp, path);
 
             // Waehrend der Uebertragung geloescht. Die Datei, die eben
             // eingesetzt wurde, ist unsere; sie geht wieder fort, und die
