@@ -44,6 +44,9 @@ public sealed class HydrationCache
 
     private readonly string _rootPath;
     private readonly string _statePath;
+
+    /// <summary>Haelt zwei Schreiber davon ab, einander zu ueberschreiben.</summary>
+    private readonly object _saveGate = new();
     private readonly Action<string>? _log;
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private readonly CacheLimits? _limits;
@@ -387,6 +390,29 @@ public sealed class HydrationCache
     {
         if (!_entries.ContainsKey(relativePath)) return false;
 
+        var ziel = FullPath(relativePath);
+
+        // Was der Beweis liest, ist der Inhalt von jetzt. Zwischen ihm und dem
+        // Freigeben liegt bei einer grossen Datei eine Sekunde und mehr, und
+        // in dieser Zeit kann jemand schreiben. Was dabei entstuende, waere
+        // verloren: der Inhalt geht fort, und der Platzhalter gilt danach als
+        // abgeglichen. Deshalb werden Groesse und Zeit vorher festgehalten
+        // und unmittelbar vor der Tat noch einmal verglichen.
+        DateTime stand;
+        long groesse;
+
+        try
+        {
+            var vorher = new FileInfo(ziel);
+            if (!vorher.Exists) return false;
+            stand = vorher.LastWriteTimeUtc;
+            groesse = vorher.Length;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
         // Der Beweis vor der Tat. MayEvict hat vorher nur ausgesiebt, welche
         // Dateien ueberhaupt in Frage kommen -- das ist eine Vorauswahl nach
         // Ankuendigungen, kein Beweis ueber den Inhalt.
@@ -396,6 +422,22 @@ public sealed class HydrationCache
                          "haelt nachweislich nicht dieselben Bytes.");
             return false;
         }
+        // Unmittelbar vor der Tat: hat sich seither etwas geaendert, gilt der
+        // Beweis fuer einen Inhalt, der nicht mehr da ist.
+        try
+        {
+            var jetzt = new FileInfo(ziel);
+            if (!jetzt.Exists || jetzt.LastWriteTimeUtc != stand || jetzt.Length != groesse)
+            {
+                _log?.Invoke($"  \"{relativePath}\" wird gerade geschrieben und bleibt erhalten.");
+                return false;
+            }
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
         // "Verdraengt" waere das falsche Wort. Nichts hat diese Datei
         // fortgedraengt; sie ist an ihrem Platz geblieben und hat nur ihren
         // Speicherplatz abgegeben, weil das Limit des Datentraegers erreicht
@@ -728,17 +770,37 @@ public sealed class HydrationCache
         }
     }
 
+    /// <summary>Schreibt den Zustand fort.</summary>
+    /// <remarks>
+    /// Ueber eine Zwischendatei, und unter einer Sperre. Geschrieben wird aus
+    /// mehreren Faeden -- nach jeder Freigabe, nach jedem Zuwachs, beim
+    /// Beenden. Zwei Schreiber auf derselben Datei hinterliessen eine halbe,
+    /// und ein Absturz mitten im Schreiben kostete die ganze Buchfuehrung:
+    /// sie faengt beim naechsten Start leer an, und bis zum naechsten
+    /// Abgleich gilt nichts als freigebbar.
+    /// </remarks>
     public void Save()
     {
-        try
+        lock (_saveGate)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_statePath))!);
-            File.WriteAllText(_statePath,
-                JsonSerializer.Serialize(_entries.ToDictionary(e => e.Key, e => e.Value)));
-        }
-        catch (Exception ex)
-        {
-            _log?.Invoke($"Cache-Zustand nicht speicherbar: {ex.Message}");
+            var ziel = _statePath;
+
+            try
+            {
+                var ordner = Path.GetDirectoryName(Path.GetFullPath(ziel))!;
+                Directory.CreateDirectory(ordner);
+
+                var zwischen = ziel + ".neu";
+                File.WriteAllText(zwischen,
+                    JsonSerializer.Serialize(_entries.ToDictionary(e => e.Key, e => e.Value)));
+
+                // Ersetzen ist auf demselben Datentraeger ein Umbenennen.
+                File.Move(zwischen, ziel, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                _log?.Invoke($"Cache-Zustand nicht speicherbar: {ex.Message}");
+            }
         }
     }
 }

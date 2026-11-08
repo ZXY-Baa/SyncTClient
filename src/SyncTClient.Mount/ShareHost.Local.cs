@@ -70,6 +70,12 @@ public sealed partial class ShareHost
     /// nicht eingehaengt ist. Der Schaden waere in diesem Fall nicht auf
     /// diesen Rechner beschraenkt: die Gegenstelle wuerde die Loeschungen
     /// uebernehmen.
+    ///
+    /// Deshalb geht je Durchgang nur diese Zahl hinaus, nicht alles auf
+    /// einmal. Als Sperre taugt die Zahl damit nicht mehr -- der Rest folgt in
+    /// den naechsten Durchgaengen --, und die eigentliche Sicherung steht
+    /// davor: nur was der vorige Durchgang noch gesehen hat und dessen
+    /// Elternordner lesbar ist, gilt als geloescht.
     /// </remarks>
     private const int MaximumDeletions = 100;
 

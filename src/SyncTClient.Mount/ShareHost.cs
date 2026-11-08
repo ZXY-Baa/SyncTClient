@@ -2178,7 +2178,15 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
             var zusammen = before.Length > 0 && after.Length > 0
                            && NameOf(before) is { } alt && NameOf(after) is { } neu;
 
-            if (zusammen) _renamedFrom[NameOf(after)!] = NameOf(before)!;
+            if (zusammen)
+            {
+                _renamedFrom[NameOf(after)!] = NameOf(before)!;
+
+                // Die Buchfuehrung des Caches haengt am Namen. Blieb der alte
+                // stehen, zaehlte er weiter mit, und ein Evict darauf faende
+                // keine Datei mehr.
+                _cache?.Forget(NameOf(before)!);
+            }
 
             // Die Loeschung des alten Namens geht nur allein hinaus. Gehoert
             // sie zu einem Umbenennen, wartet sie darauf, dass der neue Name

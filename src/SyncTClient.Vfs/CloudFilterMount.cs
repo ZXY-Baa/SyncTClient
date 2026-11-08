@@ -47,6 +47,9 @@ public sealed class CloudFilterMount : IDisposable
     private CF_CONNECTION_KEY _connectionKey;
     private bool _connected;
 
+    /// <summary>1, sobald abgebaut wurde.</summary>
+    private int _abgebaut;
+
     public CloudFilterMount(string rootPath, IContentSource source, Action<string>? log = null)
     {
         _rootPath = Path.GetFullPath(rootPath);
@@ -1109,7 +1112,21 @@ public sealed class CloudFilterMount : IDisposable
                     _log?.Invoke($"  [{offset}..{offset + take}) fertig: " +
                                  $"{geholt - begonnen} ms geholt, {jetzt - geholt} ms durchgereicht.");
 
-                offset += take;
+                // Weitergereicht wurde [dataOffset, dataOffset + data.Length) --
+                // nicht das, was angefragt war. Der Stand zieht auf das Ende
+                // dessen, was wirklich da ist. Mit dem angefragten Stueck
+                // bliebe bei einer kuerzeren Lieferung ein Loch im Bereich, und
+                // Windows wartete es bis zur Frist ab.
+                var geliefertBis = dataOffset + data.Length;
+
+                if (geliefertBis <= offset)
+                {
+                    _log?.Invoke($"  keine neuen Bytes bei [{offset}..{alignedEnd}), abgebrochen.");
+                    TransferFailure(request, offset, Math.Max(1, alignedEnd - offset));
+                    return;
+                }
+
+                offset = Math.Min(geliefertBis, alignedEnd);
                 begonnen = jetzt;
             }
 
@@ -1637,18 +1654,30 @@ public sealed class CloudFilterMount : IDisposable
 
     public unsafe void Dispose()
     {
+        // Zweimal aufgerufen wird nur einmal abgebaut. Sonst gaebe der zweite
+        // Aufruf denselben Speicher noch einmal frei.
+        if (Interlocked.Exchange(ref _abgebaut, 1) != 0) return;
+
         if (_connected)
         {
             PInvoke.CfDisconnectSyncRoot(_connectionKey);
             _connected = false;
         }
 
-        if (_callbacks is not null)
+        // Tabelle und Griff nicht sofort. Das Trennen wartet nicht auf
+        // Rueckrufe, die schon unterwegs sind: sie lesen die Tabelle, und
+        // ueber den Griff haengt dieses Objekt daran. Nach einer Weile ist
+        // keiner mehr unterwegs.
+        var tabelle = (nint)_callbacks;
+        var griff = _self;
+        _callbacks = null;
+
+        unsafe void Abbauen()
         {
-            NativeMemory.Free(_callbacks);
-            _callbacks = null;
+            if (tabelle != 0) NativeMemory.Free((void*)tabelle);
+            if (griff.IsAllocated) griff.Free();
         }
 
-        if (_self.IsAllocated) _self.Free();
+        _ = Task.Delay(TimeSpan.FromSeconds(30)).ContinueWith(_ => Abbauen(), TaskScheduler.Default);
     }
 }

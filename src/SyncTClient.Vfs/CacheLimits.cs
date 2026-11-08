@@ -306,7 +306,19 @@ public sealed class CacheLimits
             foreach (var kandidat in kandidaten)
             {
                 if (belegt - frei <= limit) break;
-                if (!kandidat.Cache.Evict(kandidat.Path)) continue;
+
+                // Ein Kandidat, der scheitert, darf den Durchgang nicht
+                // beenden: sonst bleibt der Datentraeger voll, weil eine
+                // einzige Datei sich nicht oeffnen liess.
+                try
+                {
+                    if (!kandidat.Cache.Evict(kandidat.Path)) continue;
+                }
+                catch (Exception ex)
+                {
+                    Log?.Invoke($"{root} \"{kandidat.Path}\" liess sich nicht freigeben: {ex.Message}");
+                    continue;
+                }
 
                 frei += kandidat.Bytes;
                 anzahl++;
