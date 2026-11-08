@@ -2151,16 +2151,12 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
         // liegen; freigegeben wurde erst, wenn das Limit es verlangte.
         _mount.DehydrationRequested += name =>
         {
-            if (_cache?.Evict(name, "im Explorer freigegeben") == true)
-            {
-                _log($"[{FolderId}] \"{name}\" freigegeben (Inhalt abgegeben).");
-                Wake();
-                return;
-            }
-
-            // Ohne Beweis bleibt der Inhalt. Dann muss das Merkmal fort, sonst
-            // steht es gegen das, was auf der Platte liegt.
-            if (ResolveInside(name) is { } pfad) _mount?.ClearPinned(pfad);
+            // Freigegeben wird von Windows selbst; die Antwort darauf ist im
+            // Rueckruf bereits gegeben. Hier bleibt nur die Meldung -- wer
+            // selbst noch dehydriert, laeuft der Plattform in die Arme, und
+            // seine Absage ("in Benutzung") nimmt dann das Merkmal zurueck,
+            // das der Benutzer eben gesetzt hat.
+            _log($"[{FolderId}] \"{name}\" wird freigegeben.");
         };
 
         _mount.Dehydrated += name =>

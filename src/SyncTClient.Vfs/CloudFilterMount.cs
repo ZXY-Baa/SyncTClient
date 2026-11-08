@@ -1021,6 +1021,11 @@ public sealed class CloudFilterMount : IDisposable
         var alignedEnd = Math.Min(request.FileSize, (end + SectorSize - 1) & ~((long)SectorSize - 1));
         var length = alignedEnd - start;
 
+        // Vor dem ersten Stueck eingetragen, nicht danach: ein Abbruch kann
+        // sonst in das Fenster fallen, in dem noch nichts eingetragen ist.
+        using var uebertragung = new Uebertragung(_transfers, request.TransferKey);
+        var abbruch = uebertragung.Quelle;
+
         try
         {
             // "Hydration" steht in der Schnittstelle von Windows und gehoert
@@ -1050,12 +1055,6 @@ public sealed class CloudFilterMount : IDisposable
             //
             // Der ganze Bereich ist eine Uebertragung, auch wenn er in
             // Stuecken kommt.
-            // Der Abbruch von Windows kommt als CANCEL_FETCH_DATA mit
-            // demselben Schluessel. Eingetragen wird er vor dem ersten
-            // Stueck und am Ende wieder entfernt.
-            using var uebertragung = new Uebertragung(_transfers, request.TransferKey);
-            var abbruch = uebertragung.Quelle;
-
             using var range = _source.BeginRange(request.RelativePath, length);
 
             var begonnen = Environment.TickCount64;
@@ -1126,7 +1125,7 @@ public sealed class CloudFilterMount : IDisposable
             // schlicht falsch.
             Nachsehen(request.RelativePath);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (abbruch.IsCancellationRequested)
         {
             // Windows hat abgebrochen. Kein Fehler, keine Meldung an den
             // Aufrufer -- er will nichts mehr.
@@ -1318,6 +1317,45 @@ public sealed class CloudFilterMount : IDisposable
     /// Entspricht dem Makro CF_SIZE_OF_OP_PARAM(TransferData): Feldversatz
     /// innerhalb der Union plus Groesse des Feldes.
     /// </summary>
+    private static readonly uint AckDehydrateParamSize = ComputeAckDehydrateParamSize();
+
+    private static unsafe uint ComputeAckDehydrateParamSize()
+        => (uint)sizeof(nint)
+           + (uint)sizeof(CF_OPERATION_PARAMETERS._Anonymous_e__Union._AckDehydrate_e__Struct);
+
+    /// <summary>
+    /// Antwortet auf eine Freigabe.
+    /// </summary>
+    /// <remarks>
+    /// Der Rueckruf ist blockierend: der Aufrufer wartet, bis geantwortet ist.
+    /// Ohne diese Antwort laeuft er in die Frist von sechzig Sekunden und die
+    /// Freigabe scheitert. Zugestimmt wird hier immer -- ein Platzhalter, der
+    /// nicht abgeglichen ist, wird von Windows selbst nicht freigegeben.
+    /// </remarks>
+    private unsafe bool AntworteAufFreigabe(CF_CALLBACK_INFO* info)
+    {
+        var operation = new CF_OPERATION_INFO
+        {
+            StructSize = (uint)sizeof(CF_OPERATION_INFO),
+            Type = CF_OPERATION_TYPE.CF_OPERATION_TYPE_ACK_DEHYDRATE,
+            ConnectionKey = info->ConnectionKey,
+            TransferKey = info->TransferKey
+        };
+
+        var parameters = new CF_OPERATION_PARAMETERS { ParamSize = AckDehydrateParamSize };
+        parameters.Anonymous.AckDehydrate.Flags =
+            CF_OPERATION_ACK_DEHYDRATE_FLAGS.CF_OPERATION_ACK_DEHYDRATE_FLAG_NONE;
+        parameters.Anonymous.AckDehydrate.CompletionStatus = default;
+
+        var result = PInvoke.CfExecute(&operation, &parameters);
+
+        if (result.Failed)
+            _log?.Invoke($"  Antwort auf Freigabe: 0x{(uint)result.Value:X8} " +
+                         $"(ParamSize {parameters.ParamSize})");
+
+        return result.Succeeded;
+    }
+
     private static unsafe uint ComputeTransferDataParamSize()
     {
         // FIELD_OFFSET(CF_OPERATION_PARAMETERS, TransferData) ist die Groesse
@@ -1444,6 +1482,11 @@ public sealed class CloudFilterMount : IDisposable
             var path = mount.ToRelativePath(info->NormalizedPath.Value);
             if (path.Length == 0)
                 path = Marshal.PtrToStringUni((nint)info->FileIdentity) ?? string.Empty;
+
+            // Erst antworten, dann melden. Ohne Antwort steht der Aufrufer bis
+            // zur Frist von sechzig Sekunden, und die Freigabe scheitert --
+            // auch dann, wenn wir sie laengst selbst erledigt haetten.
+            mount.AntworteAufFreigabe(info);
 
             if (path.Length == 0) return;
 
