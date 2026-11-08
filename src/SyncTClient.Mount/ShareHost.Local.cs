@@ -789,6 +789,13 @@ public sealed partial class ShareHost
 
         var found = 0;
 
+        // Der Wurzelordner traegt den Abgleichzustand, den die Shell fuer die
+        // ganze Freigabe anzeigt -- und Windows nimmt ihn zurueck, sobald
+        // jemand im Explorer den Ordner selbst anfasst ("Speicherplatz
+        // freigeben" setzt dort ein Merkmal). Deshalb bei jedem Durchgang
+        // erneut. Es sind zwei Aufrufe.
+        _mount?.MarkiereWurzelAbgeglichen();
+
         // Was ohne eigene Sequenznummer im Bestand steht und deshalb in
         // keiner Ankuendigung vorkommt: wie viele es sind, und wie viele
         // davon dieser Durchgang genommen hat. Siehe NachtragJeDurchgang.
@@ -832,6 +839,14 @@ public sealed partial class ShareHost
                 // Was mit Frist wartet, behaelt seine Frist. Siehe unten.
                 if (_wartend.ContainsKey(name)) continue;
 
+                // Auch an Verzeichnissen steht ein Anheft-Zustand. Windows
+                // setzt ihn am Ordner, wenn jemand "Speicherplatz freigeben"
+                // aus seinem eigenen Menue waehlt, und alles darin erbt ihn --
+                // der Ordner und sein Inhalt stuenden dann als "nur online
+                // verfuegbar" da, obwohl der Inhalt hier liegt.
+                if (((uint)dir.Attributes & (Angeheftet | NichtAngeheftet)) != 0)
+                    zuRichten.Add((dir.FullName, ModusVon(name) ?? false));
+
                 var gefuehrt = LocalCopy(name);
 
                 if (gefuehrt is not null && !gefuehrt.Deleted)
@@ -871,7 +886,11 @@ public sealed partial class ShareHost
                 // andere "kein Wunsch". Der Modus "bei Bedarf" meint das
                 // zweite, und wer das erste stehen laesst, bekommt vom Explorer
                 // einen Ordner, der nicht abgeglichen aussieht.
-                var hatZustand = ((uint)info.Attributes & (Angeheftet | NichtAngeheftet)) != 0;
+                // Ein freigegebener Platzhalter wird hier nicht angefasst. Sein
+                // "nicht angeheftet" hat das Freigeben gesetzt, und es sagt
+                // dasselbe wie der fehlende Inhalt: der Inhalt ist fort.
+                var freigegeben = ((uint)info.Attributes & (RecallOnDataAccess | RecallOnOpen | Offline)) != 0;
+                var hatZustand = ((uint)info.Attributes & (Angeheftet | NichtAngeheftet)) != 0 && !freigegeben;
                 var vermerk = ModusVon(name);
 
                 if (vermerk is null)

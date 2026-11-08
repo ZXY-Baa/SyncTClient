@@ -178,7 +178,7 @@ public sealed class CloudFilterMount : IDisposable
     /// ERROR_CLOUD_FILE_ACCESS_DENIED. Siehe
     /// https://learn.microsoft.com/en-us/answers/questions/1179273/
     /// </remarks>
-    private unsafe void MarkiereWurzelAbgeglichen()
+    public unsafe void MarkiereWurzelAbgeglichen()
     {
         try
         {
