@@ -91,6 +91,12 @@ jobs:
           $muster = '(?ms)^## ' + [regex]::Escape($env:FASSUNG) + ' .*?\r?\n(.*?)(?=^## |\z)'
           $treffer = [regex]::Match($text, $muster)
 
+          # Ein Etikett laesst sich neu setzen -- dann steht die Freigabe noch
+          # aus dem vorigen Lauf, und "create" bricht ab. Sie wird deshalb
+          # vorher entfernt; das Etikett selbst bleibt.
+          & gh release delete "v$env:FASSUNG" --yes 2>$null
+          if ($LASTEXITCODE -eq 0) { Write-Host "Vorhandene Freigabe fuer v$env:FASSUNG entfernt." }
+
           $argumente = @('release', 'create', "v$env:FASSUNG", $env:PAKET, '--title', "SyncTClient $env:FASSUNG")
           if ($treffer.Success -and $treffer.Groups[1].Value.Trim()) {
             $hinweise = Join-Path $env:RUNNER_TEMP 'hinweise.md'
