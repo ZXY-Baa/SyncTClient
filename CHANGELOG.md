@@ -37,6 +37,24 @@ project; the version number starts over here.
 - The volume overview reads the index in pages of ten thousand entries instead
   of one block, and no longer holds the index lock for the whole scan.
 
+**Nach der ersten Veroeffentlichung** (in diesem Paket enthalten)
+
+- Explorer meldete die Freigabe als "Synchronisierung ausstehend". Ursache war
+  der Anheft-Zustand: der Anbieter setzte an jedem Platzhalter "nicht
+  angeheftet", und die Shell liest das als "der Inhalt darf weg".
+- "Speicherplatz freigeben" aus dem eigenen Menue von Windows erreicht den
+  Anbieter jetzt wirklich. Die Rueckrufe dafuer waren nicht angemeldet, und
+  ohne Antwort lief jede Freigabe in die Frist von sechzig Sekunden: es wurde
+  nur ein Merkmal gesetzt, kein Inhalt abgegeben.
+- Ein abgebrochener Abruf laeuft nicht mehr weiter, bis die Datei ganz da ist.
+- Ein Fehler beim Bereitstellen meldet sich jetzt bei Windows, statt die
+  Anfrage bis zur Frist stehenzulassen.
+- Dateien, die beim ersten Start schon im Ordner liegen, werden zu
+  Platzhaltern mit Abgleichzustand. Eine bestehende Freigabe zeigt damit
+  "synchronisiert" statt "ausstehend".
+- Freigeben prueft vorher und nachher, ob sich die Datei in der Zwischenzeit
+  geaendert hat; eine Aenderung, die waehrend des Nachweises entsteht, wird
+  nicht verworfen.
 ## 0.9.8 — 2026-09-26
 
 **Synchronisation**
