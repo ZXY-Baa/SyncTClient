@@ -2233,7 +2233,7 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
         // einmal zu kopieren war ueberfluessig.
         PersistentFolderIndex? bestand;
         lock (_indexGate) bestand = _index;
-        if (bestand is not null) QueueIncoming(bestand.AllNames());
+        if (bestand is not null) QueueIncoming(bestand.AllNames().Where(n => ResolveInside(n) is not null));
 
         SetPhase(SyncPhase.Cache);
         _cache.ReconcileWithDisk();
@@ -4753,9 +4753,14 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
                 ? full
                 : null;
         }
-        catch (ArgumentException)
+        catch (Exception)
         {
-            // Zeichen, die Windows in einem Pfad nicht zulaesst.
+            // Zeichen, die Windows in einem Pfad nicht zulaesst -- und Namen,
+            // die laenger sind als ein Pfad sein darf. PathTooLongException
+            // ist keine ArgumentException; sie lief hier vorher durch, und
+            // aus einer einzigen Ankuendigung wurde ein Verbindungsabbruch.
+            // Gefiltert wird damit an einer Stelle, die nichts anderes tut als
+            // Text zu pruefen: jeder Fehler bedeutet "kein Name".
             return null;
         }
     }

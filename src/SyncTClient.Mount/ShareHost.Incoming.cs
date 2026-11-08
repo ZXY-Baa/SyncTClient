@@ -313,6 +313,13 @@ public sealed partial class ShareHost
 
     private void Apply(string name, Bilanz bilanz)
     {
+        // Der Name kommt aus dem Bestand der Gegenstelle -- beim Verbinden
+        // auch aus dem gespeicherten, und der kann aus einer aelteren Fassung
+        // stammen, die noch nicht gefiltert hat. Angewendet wird mit
+        // LocalPathOf, einer blossen Zusammensetzung; deshalb steht die
+        // Pruefung hier noch einmal, vor jedem Zugriff.
+        if (ResolveInside(name) is null) return;
+
         BepFileInfo theirs;
         BepFileInfo? mine;
 
@@ -434,7 +441,14 @@ public sealed partial class ShareHost
             }
 
             bilanz.Konflikte++;
-            if (!ResolveConflict(name, path, mine!, theirs)) return;
+            if (!ResolveConflict(name, path, mine!, theirs))
+            {
+                // Der Name ist schon aus der Warteschlange genommen. Ohne
+                // diesen Vermerk kaeme er nicht wieder: die Gegenstelle
+                // kuendigt eine unveraenderte Datei nicht erneut an.
+                _incoming[name] = 0;
+                return;
+            }
         }
         else if (mine is { Deleted: true })
         {
@@ -494,7 +508,11 @@ public sealed partial class ShareHost
 
                 case VersionOrder.Nebeneinander:
                     bilanz.Konflikte++;
-                    if (!ResolveConflict(name, path, mine, theirs)) return;
+                    if (!ResolveConflict(name, path, mine, theirs))
+                    {
+                        _incoming[name] = 0;
+                        return;
+                    }
                     break;
             }
         }
@@ -811,7 +829,13 @@ public sealed partial class ShareHost
         {
             var info = new FileInfo(path);
             if (!info.Exists) return mine.ModifiedS;
-            if (((uint)info.Attributes & PlatzhalterMerkmal) != 0) return mine.ModifiedS;
+
+            // Ein gefuellter Platzhalter traegt das Reparse-Merkmal ebenfalls
+            // und hat einen echten Zeitstempel. Nur ein freigegebener hat
+            // keinen Inhalt, dessen Zeit etwas aussagte -- erkennbar an den
+            // Merkmalen, die zum Nachladen auffordern.
+            if (((uint)info.Attributes & (RecallOnDataAccess | RecallOnOpen | Offline)) != 0)
+                return mine.ModifiedS;
 
             return new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds();
         }

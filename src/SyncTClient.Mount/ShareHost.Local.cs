@@ -1843,7 +1843,7 @@ public sealed partial class ShareHost
     public void RequeueAll()
     {
         lock (_indexGate)
-            if (_index is not null) QueueIncoming(_index.AllNames());
+            if (_index is not null) QueueIncoming(_index.AllNames().Where(n => ResolveInside(n) is not null));
 
         // Der naechste Durchgang soll neu messen und nicht erst in einer
         // Minute: der Rueckstand hat sich gerade geaendert.
@@ -2233,9 +2233,20 @@ public sealed partial class ShareHost
                 // eine Loeschung hinaus, deren Gegenstueck nie folgt -- und der
                 // Inhalt ist ueberall fort.
                 if (NameOf(e.OldFullPath) is { } alt && NameOf(e.FullPath) is { } neu)
-                    _renamedFrom[neu] = alt;
+                {
+                    // Der Vermerk traegt die Blockliste des alten Namens; er
+                    // gilt nur fuer Platzhalter, denn nur die muss man nicht
+                    // erst holen. Fuer eine gewoehnliche Datei wird die
+                    // Loeschung des alten Namens gleich vorgemerkt -- sonst
+                    // wartete sie auf den stuendlichen Durchgang, und der
+                    // Vermerk bliebe fuer immer stehen.
+                    if (IsPlaceholder(e.OldFullPath)) _renamedFrom[neu] = alt;
+                    else NoteLocalDelete(alt);
+                }
                 else
+                {
                     NoteLocalDelete(e.OldFullPath);
+                }
 
                 NoteLocalChange(e.FullPath);
             };
