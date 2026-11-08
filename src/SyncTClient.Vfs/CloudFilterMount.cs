@@ -1087,6 +1087,12 @@ public sealed class CloudFilterMount : IDisposable
                 {
                     _log?.Invoke($"  abgebrochen bei [{offset}..{offset + take}) " +
                                  $"nach {geliefert} von {length} B.");
+
+                    // Der Anfrage sagen, dass sie scheitert. Ohne das wartet
+                    // Windows die Frist von sechzig Sekunden ab -- der Fehler,
+                    // der im Protokoll als 0x800701AA auftaucht, obwohl hier
+                    // laengst abgebrochen wurde.
+                    TransferFailure(request, offset, take);
                     return;
                 }
 
@@ -1136,7 +1142,7 @@ public sealed class CloudFilterMount : IDisposable
             _log?.Invoke($"Inhalt konnte nicht bereitgestellt werden: {request.RelativePath}: {ex.Message}");
             // STATUS_UNSUCCESSFUL. Der Zugriff scheitert, statt
             // haengenzubleiben.
-            TransferFailure(request, start);
+            TransferFailure(request, start, length);
         }
     }
 
@@ -1261,8 +1267,13 @@ public sealed class CloudFilterMount : IDisposable
     /// </summary>
     private const int ChunkSize = 8 << 20;
 
-    private unsafe void TransferFailure(HydrationRequest request, long offset)
-        => Transfer(request, null, offset, 0, unchecked((int)0xC0000001));
+    /// <remarks>
+    /// Die Laenge ist die des verlangten Bereichs, nicht null. Eine Anfrage mit
+    /// Laenge null scheitert nicht -- sie gilt als "nichts zu tun", und der
+    /// Aufrufer wartet weiter.
+    /// </remarks>
+    private unsafe void TransferFailure(HydrationRequest request, long offset, long length)
+        => Transfer(request, null, offset, length, unchecked((int)0xC0000001));
 
     private unsafe Uebergabe Transfer(HydrationRequest request, void* buffer, long offset, long length, int ntStatus)
     {
@@ -1437,6 +1448,18 @@ public sealed class CloudFilterMount : IDisposable
             _liste = liste;
             _schluessel = schluessel;
             Quelle = new CancellationTokenSource();
+
+            // Windows vergibt Schluessel wieder. Steht unter demselben noch
+            // eine aeltere Uebertragung, gehoert sie uns nicht mehr -- sie
+            // wird beendet statt verwaist.
+            if (liste.TryRemove(schluessel, out var alt))
+            {
+                try { alt.Cancel(); }
+                catch (ObjectDisposedException) { /* schon vorbei */ }
+
+                alt.Dispose();
+            }
+
             liste[schluessel] = Quelle;
         }
 
@@ -1444,7 +1467,12 @@ public sealed class CloudFilterMount : IDisposable
 
         public void Dispose()
         {
-            _liste.TryRemove(_schluessel, out _);
+            // Nur den eigenen Eintrag entfernen: ein TryRemove ueber den
+            // Schluessel allein naehme einer neueren Uebertragung die
+            // Moeglichkeit, abgebrochen zu werden.
+            ((ICollection<KeyValuePair<long, CancellationTokenSource>>)_liste)
+                .Remove(new KeyValuePair<long, CancellationTokenSource>(_schluessel, Quelle));
+
             Quelle.Dispose();
         }
     }
