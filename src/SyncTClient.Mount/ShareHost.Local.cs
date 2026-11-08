@@ -820,6 +820,13 @@ public sealed partial class ShareHost
         // die Datei, und das gehoert nicht in eine Aufzaehlung.
         var zuRichten = new List<(string Pfad, bool Lokal)>();
 
+        // Und was jemand freigegeben hat, ohne dass es geschah. Windows setzt
+        // aus seinem eigenen Menue "nicht angeheftet"; der Inhalt bleibt
+        // dabei liegen. Der Wunsch gilt -- freigegeben wird dann wirklich,
+        // mit demselben Beweis wie sonst. Ohne Beweis bleibt der Inhalt und
+        // das Merkmal geht fort.
+        var zuBefreien = new List<(string Name, string Pfad)>();
+
         // Und was aus dem Dateisystem zu uebernehmen ist. Gesammelt, nicht
         // einzeln geschrieben: beim ersten Durchgang nach dieser Fassung sind
         // das alle Dateien, die jemals angeheftet wurden.
@@ -896,16 +903,23 @@ public sealed partial class ShareHost
                 if (vermerk is null)
                 {
                     if (angeheftet) zuUebernehmen.Add((name, true));
-
-                    // Ohne Vermerk und doch "nicht angeheftet": das hat
-                    // niemand hier gewaehlt, sondern Windows beim Freigeben
-                    // aus seinem eigenen Menue -- oder es ist ein Rest. Es
-                    // wird zurueckgenommen; ein Modus entsteht daraus nicht.
                     else if (hatZustand) zuRichten.Add((info.FullName, false));
                 }
                 else if (vermerk.Value ? !angeheftet : hatZustand)
                 {
                     zuRichten.Add((info.FullName, vermerk.Value));
+                }
+
+                // Freigegeben, aber noch nicht geschehen: hier wird es
+                // nachgeholt. Wer "Speicherplatz freigeben" waehlt, erwartet,
+                // dass der Inhalt fortgeht -- nicht, dass nur ein Merkmal
+                // gesetzt wird und der Platz belegt bleibt.
+                if (!freigegeben
+                    && ((uint)info.Attributes & NichtAngeheftet) != 0
+                    && vermerk is null or false)
+                {
+                    zuBefreien.Add((name, info.FullName));
+                    zuRichten.RemoveAll(e => e.Pfad == info.FullName);
                 }
 
                 // Ein Platzhalter ist nicht vollstaendig hier. Angekuendigt
@@ -999,6 +1013,25 @@ public sealed partial class ShareHost
             // bleibt die Zahl ueber die Durchgaenge hinweg gleich, gelingt das
             // Setzen nicht, und das ist im Protokoll zu sehen.
             const int JeDurchgang = 2000;
+
+            // Erst wirklich freigeben, was freigegeben werden soll. Gelingt
+            // der Beweis nicht, faellt der Eintrag an das Zuruecknehmen: dann
+            // bleibt der Inhalt und das Merkmal verschwindet.
+            var befreit = 0;
+            foreach (var (befreienName, befreienPfad) in zuBefreien.Take(JeDurchgang))
+            {
+                if (_cache?.Evict(befreienName, "vom Benutzer freigegeben") == true)
+                {
+                    befreit++;
+                    continue;
+                }
+
+                _mount!.ClearPinned(befreienPfad);
+                zuRichten.Add((befreienPfad, false));
+            }
+
+            if (befreit > 0)
+                _log($"[{FolderId}] {befreit} Platzhalter freigegeben (Inhalt abgegeben).");
 
             var stapel = zuRichten.Take(JeDurchgang).ToList();
 
@@ -2248,6 +2281,44 @@ public sealed partial class ShareHost
         _localLoop = Task.Run(() => RunLocalAsync(token), CancellationToken.None);
     }
 
+    private DateTime _markenPruefung;
+
+    /// <summary>Welche Anheft-Merkmale an einem Pfad stehen (0 = keine).</summary>
+    private static uint MarkeAn(string pfad)
+    {
+        try
+        {
+            var art = File.Exists(pfad) ? File.GetAttributes(pfad) : new DirectoryInfo(pfad).Attributes;
+            return (uint)art & (Angeheftet | NichtAngeheftet);
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Ob ein Ordner unter der Wurzel auf Freigabe wartet.
+    /// </summary>
+    /// <remarks>
+    /// Nur "nicht angeheftet" zaehlt: das ist die Bitte, den Inhalt
+    /// abzugeben. "Angeheftet" ist eine Wahl und bleibt stehen.
+    /// </remarks>
+    private bool OrdnerWartetAufFreigabe()
+    {
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(_config.LocalPath))
+                if ((MarkeAn(dir) & NichtAngeheftet) != 0) return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Nichts gefunden ist auch eine Antwort.
+        }
+
+        return false;
+    }
+
     private async Task StopLocalLoopAsync()
     {
         StopWatching();
@@ -2301,6 +2372,47 @@ public sealed partial class ShareHost
                 // sie war nie ein Platzhalter. Deshalb wird in Abstaenden
                 // nachgesehen. Der Durchgang liest nur Attribute, Groesse und
                 // Zeit, keine Inhalte.
+                // Windows gibt aus seinem eigenen Menue frei. Das setzt nur
+                // ein Merkmal; geschehen muss es hier -- und der Durchgang
+                // ueber den Ordner laeuft stuendlich. Eine Freigabe soll nicht
+                // so lange warten. Deshalb wird an der Wurzel und den obersten
+                // Ordnern nachgesehen: ein paar Attributlesungen je Takt.
+                if (DateTime.UtcNow - _markenPruefung > TimeSpan.FromSeconds(10))
+                {
+                    _markenPruefung = DateTime.UtcNow;
+
+                    // Die Wurzel traegt den Zustand, den die Shell fuer die
+                    // ganze Freigabe anzeigt. Steht dort etwas, geht es sofort
+                    // fort -- das kostet zwei Aufrufe.
+                    if (MarkeAn(_config.LocalPath) != 0)
+                        _mount?.MarkiereWurzelAbgeglichen();
+
+                    // Die Verwaltungsordner stehen in keinem Index; der
+                    // Durchgang ueber den Ordner sieht sie nicht. Hier sind es
+                    // zwei Pfade und ihre Kinder.
+                    foreach (var verwaltung in new[] { MarkerFolder, VersionsFolder })
+                    {
+                        var pfad = Path.Combine(_config.LocalPath, verwaltung);
+                        if (!Directory.Exists(pfad)) continue;
+
+                        if (MarkeAn(pfad) != 0) _mount?.ClearPinned(pfad);
+
+                        try
+                        {
+                            foreach (var datei in Directory.EnumerateFiles(pfad))
+                                if ((MarkeAn(datei) & (Angeheftet | NichtAngeheftet)) != 0)
+                                    _mount?.ClearPinned(datei);
+                        }
+                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                        {
+                            // Beim naechsten Takt erneut.
+                        }
+                    }
+
+                    if (OrdnerWartetAufFreigabe())
+                        _lastScan = DateTime.MinValue;
+                }
+
                 if (DateTime.UtcNow - _lastScan >= _rescanInterval)
                 {
                     _lastScan = DateTime.UtcNow;
