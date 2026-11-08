@@ -77,6 +77,21 @@ public sealed class CloudFilterMount : IDisposable
     public event Action<string, string>? FileRenamed;
 
     /// <summary>
+    /// Windows gibt einen Platzhalter frei ("Speicherplatz freigeben").
+    /// </summary>
+    /// <remarks>
+    /// Der Eintrag steht unter dem relativen Namen. Ohne diesen Rueckruf
+    /// erfaehrt der Anbieter von der Freigabe gar nichts -- Windows setzt in
+    /// seinem eigenen Menue nur das Merkmal "nicht angeheftet", und der Inhalt
+    /// bleibt liegen. Deshalb wurde bisher jede Freigabe nur "vermerkt" und
+    /// musste im Durchgang nachgeholt werden.
+    /// </remarks>
+    public event Action<string>? DehydrationRequested;
+
+    /// <summary>Windows hat einen Platzhalter freigegeben.</summary>
+    public event Action<string>? Dehydrated;
+
+    /// <summary>
     /// Verbindet die Rueckrufe. Ab hier leitet Windows Zugriffe hierher
     /// weiter.
     /// </summary>
@@ -87,7 +102,7 @@ public sealed class CloudFilterMount : IDisposable
         // Die Tabelle muss ueber die gesamte Verbindungsdauer gueltig bleiben,
         // deshalb nativ statt auf dem verschiebbaren Heap.
         _callbacks = (CF_CALLBACK_REGISTRATION*)NativeMemory.Alloc(
-            5, (nuint)sizeof(CF_CALLBACK_REGISTRATION));
+            7, (nuint)sizeof(CF_CALLBACK_REGISTRATION));
 
         _callbacks[0] = new CF_CALLBACK_REGISTRATION
         {
@@ -112,7 +127,19 @@ public sealed class CloudFilterMount : IDisposable
             Type = CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NOTIFY_RENAME_COMPLETION,
             Callback = &OnRenameCompletion
         };
+        // Die Freigabe aus dem Menue von Windows. Ohne diese beiden meldet
+        // Windows nichts, und es bleibt bei einem Merkmal ohne Wirkung.
         _callbacks[4] = new CF_CALLBACK_REGISTRATION
+        {
+            Type = CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NOTIFY_DEHYDRATE,
+            Callback = &OnDehydrate
+        };
+        _callbacks[5] = new CF_CALLBACK_REGISTRATION
+        {
+            Type = CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NOTIFY_DEHYDRATE_COMPLETION,
+            Callback = &OnDehydrateCompletion
+        };
+        _callbacks[6] = new CF_CALLBACK_REGISTRATION
         {
             Type = CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NONE,
             Callback = null
@@ -1325,6 +1352,50 @@ public sealed class CloudFilterMount : IDisposable
             if (path.Length == 0) return;
 
             mount.Raise(() => mount.FileDeleted?.Invoke(path), "FileDeleted", path);
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>
+    /// Windows gibt einen Platzhalter frei. Der Aufrufer wartet auf die
+    /// Rueckkehr, deshalb wird hier nur gemeldet.
+    /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
+    private static unsafe void OnDehydrate(CF_CALLBACK_INFO* info, CF_CALLBACK_PARAMETERS* parameters)
+    {
+        try
+        {
+            var mount = (CloudFilterMount)GCHandle.FromIntPtr((nint)info->CallbackContext).Target!;
+
+            var path = mount.ToRelativePath(info->NormalizedPath.Value);
+            if (path.Length == 0)
+                path = Marshal.PtrToStringUni((nint)info->FileIdentity) ?? string.Empty;
+
+            if (path.Length == 0) return;
+
+            mount.Raise(() => mount.DehydrationRequested?.Invoke(path), "DehydrationRequested", path);
+        }
+        catch
+        {
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
+    private static unsafe void OnDehydrateCompletion(CF_CALLBACK_INFO* info, CF_CALLBACK_PARAMETERS* parameters)
+    {
+        try
+        {
+            var mount = (CloudFilterMount)GCHandle.FromIntPtr((nint)info->CallbackContext).Target!;
+
+            var path = mount.ToRelativePath(info->NormalizedPath.Value);
+            if (path.Length == 0)
+                path = Marshal.PtrToStringUni((nint)info->FileIdentity) ?? string.Empty;
+
+            if (path.Length == 0) return;
+
+            mount.Raise(() => mount.Dehydrated?.Invoke(path), "Dehydrated", path);
         }
         catch
         {

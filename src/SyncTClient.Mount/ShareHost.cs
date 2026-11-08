@@ -2144,6 +2144,31 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
 
         _mount.FileClosed += NoteLocalChange;
         _mount.FileDeleted += NoteLocalDelete;
+
+        // Windows gibt aus seinem eigenen Menue frei. Der Wunsch gilt -- aber
+        // erst, wenn die Gegenstelle nachweislich dieselben Bytes haelt. Bis
+        // hierher wurde davon nur ein Merkmal gesetzt, und der Inhalt blieb
+        // liegen; freigegeben wurde erst, wenn das Limit es verlangte.
+        _mount.DehydrationRequested += name =>
+        {
+            if (_cache?.Evict(name, "im Explorer freigegeben") == true)
+            {
+                _log($"[{FolderId}] \"{name}\" freigegeben (Inhalt abgegeben).");
+                Wake();
+                return;
+            }
+
+            // Ohne Beweis bleibt der Inhalt. Dann muss das Merkmal fort, sonst
+            // steht es gegen das, was auf der Platte liegt.
+            if (ResolveInside(name) is { } pfad) _mount?.ClearPinned(pfad);
+        };
+
+        _mount.Dehydrated += name =>
+        {
+            // Der Inhalt ist fort; die Buchfuehrung zieht nach.
+            _cache?.Forget(name);
+            CacheChanged?.Invoke();
+        };
         _mount.FileRenamed += (before, after) =>
         {
             // Ein Umbenennen ist fuer das Protokoll eine neue Datei und eine
