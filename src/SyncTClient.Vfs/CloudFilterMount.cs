@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -102,7 +103,7 @@ public sealed class CloudFilterMount : IDisposable
         // Die Tabelle muss ueber die gesamte Verbindungsdauer gueltig bleiben,
         // deshalb nativ statt auf dem verschiebbaren Heap.
         _callbacks = (CF_CALLBACK_REGISTRATION*)NativeMemory.Alloc(
-            7, (nuint)sizeof(CF_CALLBACK_REGISTRATION));
+            8, (nuint)sizeof(CF_CALLBACK_REGISTRATION));
 
         _callbacks[0] = new CF_CALLBACK_REGISTRATION
         {
@@ -129,17 +130,24 @@ public sealed class CloudFilterMount : IDisposable
         };
         // Die Freigabe aus dem Menue von Windows. Ohne diese beiden meldet
         // Windows nichts, und es bleibt bei einem Merkmal ohne Wirkung.
+        // Ein abgebrochener Abruf. Ohne diesen Rueckruf liefe er weiter: der
+        // Benutzer haette abgebrochen, und die Leitung bliebe belegt.
         _callbacks[4] = new CF_CALLBACK_REGISTRATION
+        {
+            Type = CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_CANCEL_FETCH_DATA,
+            Callback = &OnCancelFetchData
+        };
+        _callbacks[5] = new CF_CALLBACK_REGISTRATION
         {
             Type = CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NOTIFY_DEHYDRATE,
             Callback = &OnDehydrate
         };
-        _callbacks[5] = new CF_CALLBACK_REGISTRATION
+        _callbacks[6] = new CF_CALLBACK_REGISTRATION
         {
             Type = CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NOTIFY_DEHYDRATE_COMPLETION,
             Callback = &OnDehydrateCompletion
         };
-        _callbacks[6] = new CF_CALLBACK_REGISTRATION
+        _callbacks[7] = new CF_CALLBACK_REGISTRATION
         {
             Type = CF_CALLBACK_TYPE.CF_CALLBACK_TYPE_NONE,
             Callback = null
@@ -1042,6 +1050,12 @@ public sealed class CloudFilterMount : IDisposable
             //
             // Der ganze Bereich ist eine Uebertragung, auch wenn er in
             // Stuecken kommt.
+            // Der Abbruch von Windows kommt als CANCEL_FETCH_DATA mit
+            // demselben Schluessel. Eingetragen wird er vor dem ersten
+            // Stueck und am Ende wieder entfernt.
+            using var uebertragung = new Uebertragung(_transfers, request.TransferKey);
+            var abbruch = uebertragung.Quelle;
+
             using var range = _source.BeginRange(request.RelativePath, length);
 
             var begonnen = Environment.TickCount64;
@@ -1060,7 +1074,7 @@ public sealed class CloudFilterMount : IDisposable
                 using var puls = Fortschrittsmelder(request, length, geliefert);
 
                 var (dataOffset, data) = await _source.ReadAsync(
-                        request.RelativePath, offset, take, CancellationToken.None)
+                        request.RelativePath, offset, take, abbruch.Token)
                     .ConfigureAwait(false);
 
                 var geholt = Environment.TickCount64;
@@ -1111,6 +1125,12 @@ public sealed class CloudFilterMount : IDisposable
             // vollstaendig war. Die Zeile stand dann im Protokoll und war
             // schlicht falsch.
             Nachsehen(request.RelativePath);
+        }
+        catch (OperationCanceledException)
+        {
+            // Windows hat abgebrochen. Kein Fehler, keine Meldung an den
+            // Aufrufer -- er will nichts mehr.
+            _log?.Invoke($"  abgebrochen: {request.RelativePath}");
         }
         catch (Exception ex)
         {
@@ -1352,6 +1372,58 @@ public sealed class CloudFilterMount : IDisposable
             if (path.Length == 0) return;
 
             mount.Raise(() => mount.FileDeleted?.Invoke(path), "FileDeleted", path);
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>Laufende Uebertragungen, damit sich eine abbrechen laesst.</summary>
+    private readonly ConcurrentDictionary<long, CancellationTokenSource> _transfers = new();
+
+    /// <summary>
+    /// Ein Eintrag in der Liste der laufenden Uebertragungen, der sich selbst
+    /// wieder austraegt.
+    /// </summary>
+    /// <remarks>
+    /// Ohne das Austragen waechst die Liste mit jeder angeforderten Datei,
+    /// und jeder Eintrag haelt eine Abbruchquelle, die niemand mehr braucht.
+    /// </remarks>
+    private sealed class Uebertragung : IDisposable
+    {
+        private readonly ConcurrentDictionary<long, CancellationTokenSource> _liste;
+        private readonly long _schluessel;
+
+        public Uebertragung(ConcurrentDictionary<long, CancellationTokenSource> liste, long schluessel)
+        {
+            _liste = liste;
+            _schluessel = schluessel;
+            Quelle = new CancellationTokenSource();
+            liste[schluessel] = Quelle;
+        }
+
+        public CancellationTokenSource Quelle { get; }
+
+        public void Dispose()
+        {
+            _liste.TryRemove(_schluessel, out _);
+            Quelle.Dispose();
+        }
+    }
+
+    /// <summary>Windows braucht einen angeforderten Bereich nicht mehr.</summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
+    private static unsafe void OnCancelFetchData(CF_CALLBACK_INFO* info, CF_CALLBACK_PARAMETERS* parameters)
+    {
+        try
+        {
+            var mount = (CloudFilterMount)GCHandle.FromIntPtr((nint)info->CallbackContext).Target!;
+
+            if (mount._transfers.TryGetValue(info->TransferKey, out var quelle))
+            {
+                try { quelle.Cancel(); }
+                catch (ObjectDisposedException) { /* schon vorbei */ }
+            }
         }
         catch
         {
