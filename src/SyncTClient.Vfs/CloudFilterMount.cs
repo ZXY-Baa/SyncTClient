@@ -208,6 +208,16 @@ public sealed class CloudFilterMount : IDisposable
 
             if (result.Failed)
                 _log?.Invoke($"Wurzel als abgeglichen setzen: 0x{(uint)result.Value:X8}");
+
+            // Und den Anheft-Zustand der Wurzel zuruecknehmen. Windows setzt
+            // ihn, wenn jemand im Explorer den ganzen Ordner freigibt; die
+            // Wurzel traegt dann "nicht angeheftet" und wird als nicht
+            // abgeglichen gezeigt, obwohl die Eintraege darin es sind.
+            var pin = PInvoke.CfSetPinState(
+                handle, CF_PIN_STATE.CF_PIN_STATE_UNSPECIFIED, CF_SET_PIN_FLAGS.CF_SET_PIN_FLAG_NONE, null);
+
+            if (pin.Failed)
+                _log?.Invoke($"Anheft-Zustand der Wurzel: 0x{(uint)pin.Value:X8}");
         }
         catch (Exception ex)
         {
@@ -839,6 +849,40 @@ public sealed class CloudFilterMount : IDisposable
                 _log?.Invoke($"  Anheft-Zustand fuer \"{Path.GetFileName(fullPath)}\": 0x{(uint)result.Value:X8}");
         }
         catch (IOException) { /* in Benutzung, beim naechsten Start erneut */ }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    /// <summary>
+    /// Nimmt den Anheft-Zustand ganz zurueck.
+    /// </summary>
+    /// <remarks>
+    /// "Weder angeheftet noch freigegeben" ist der Normalfall eines
+    /// Platzhalters, dessen Inhalt hier liegt. "Nicht angeheftet" liest der
+    /// Explorer dagegen als "nur online verfuegbar" -- und den Ordner darueber
+    /// als nicht abgeglichen. Wo nur "kein Wunsch nach lokalem Halten" gemeint
+    /// ist, wird deshalb nichts gesetzt statt "nicht angeheftet".
+    /// </remarks>
+    public unsafe void ClearPinned(string fullPath)
+    {
+        try
+        {
+            using var handle = PInvoke.CreateFile(
+                fullPath,
+                (uint)(FILE_ACCESS_RIGHTS.FILE_READ_ATTRIBUTES | FILE_ACCESS_RIGHTS.FILE_WRITE_ATTRIBUTES),
+                FILE_SHARE_MODE.FILE_SHARE_READ | FILE_SHARE_MODE.FILE_SHARE_WRITE
+                    | FILE_SHARE_MODE.FILE_SHARE_DELETE,
+                null,
+                FILE_CREATION_DISPOSITION.OPEN_EXISTING,
+                FILE_FLAGS_AND_ATTRIBUTES.FILE_FLAG_OPEN_NO_RECALL
+                    | FILE_FLAGS_AND_ATTRIBUTES.FILE_FLAG_BACKUP_SEMANTICS,
+                null);
+
+            if (handle.IsInvalid) return;
+
+            PInvoke.CfSetPinState(
+                handle, CF_PIN_STATE.CF_PIN_STATE_UNSPECIFIED, CF_SET_PIN_FLAGS.CF_SET_PIN_FLAG_NONE, null);
+        }
+        catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
 

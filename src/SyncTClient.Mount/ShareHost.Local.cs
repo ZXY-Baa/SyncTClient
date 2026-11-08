@@ -865,13 +865,26 @@ public sealed partial class ShareHost
                 // nicht -- angelegt wird er ohne, und erst hier bekommt er
                 // ihn.
                 var angeheftet = ((uint)info.Attributes & Angeheftet) != 0;
+
+                // "Nicht angeheftet" zaehlt hier mit. Es ist nicht dasselbe wie
+                // "kein Zustand": das eine heisst "der Inhalt darf weg", das
+                // andere "kein Wunsch". Der Modus "bei Bedarf" meint das
+                // zweite, und wer das erste stehen laesst, bekommt vom Explorer
+                // einen Ordner, der nicht abgeglichen aussieht.
+                var hatZustand = ((uint)info.Attributes & (Angeheftet | NichtAngeheftet)) != 0;
                 var vermerk = ModusVon(name);
 
                 if (vermerk is null)
                 {
                     if (angeheftet) zuUebernehmen.Add((name, true));
+
+                    // Ohne Vermerk und doch "nicht angeheftet": das hat
+                    // niemand hier gewaehlt, sondern Windows beim Freigeben
+                    // aus seinem eigenen Menue -- oder es ist ein Rest. Es
+                    // wird zurueckgenommen; ein Modus entsteht daraus nicht.
+                    else if (hatZustand) zuRichten.Add((info.FullName, false));
                 }
-                else if (vermerk.Value != angeheftet)
+                else if (vermerk.Value ? !angeheftet : hatZustand)
                 {
                     zuRichten.Add((info.FullName, vermerk.Value));
                 }
@@ -969,7 +982,15 @@ public sealed partial class ShareHost
             const int JeDurchgang = 2000;
 
             var stapel = zuRichten.Take(JeDurchgang).ToList();
-            foreach (var (pfad, lokal) in stapel) _mount.SetPinned(pfad, lokal);
+
+            // "Bei Bedarf" setzt keinen Zustand, es nimmt einen zurueck. Ein
+            // gesetztes "nicht angeheftet" saehe aus wie eine Freigabe, die nie
+            // stattgefunden hat.
+            foreach (var (pfad, lokal) in stapel)
+            {
+                if (lokal) _mount.SetPinned(pfad, true);
+                else _mount.ClearPinned(pfad);
+            }
 
             var lokale = stapel.Count(e => e.Lokal);
             _log($"[{FolderId}] Anheft-Zustand nachgezogen: {lokale} auf \"immer lokal\", " +
