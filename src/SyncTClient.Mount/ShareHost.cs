@@ -3809,13 +3809,18 @@ public sealed partial class ShareHost : IAsyncDisposable, IContentSource
                 }
                 else
                 {
-                    // Freigeben verwirft den Inhalt nicht sofort. Ab jetzt
-                    // zaehlt die Datei auf das Limit des Datentraegers, so als
-                    // waere sie eben erst gefuellt worden -- deshalb die
+                    // Freigeben verwirft den Inhalt nicht sofort -- und es setzt
+                    // auch kein Merkmal vorab. "Nicht angeheftet" an einer Datei,
+                    // deren Inhalt hier liegt, liest der Explorer als "nur online
+                    // verfuegbar" und den Ordner darueber als nicht abgeglichen.
+                    // Das Merkmal gehoert an die freigegebene Datei, nicht an die
+                    // Absicht; gesetzt wird es beim Dehydrieren.
+                    //
+                    // Ab jetzt zaehlt die Datei auf das Limit des Datentraegers,
+                    // so als waere sie eben erst gefuellt worden -- deshalb die
                     // jetzige Zugriffszeit. Verdraengt wird nach First in,
                     // first out: zuerst weicht, was am laengsten niemand
                     // angefasst hat, und das ist nicht diese hier.
-                    _mount?.SetPinned(pfad, false);
 
                     // Ausser sie ist allein schon groesser als das Limit des
                     // Datentraegers. Dann kann sie dort nie bleiben: sie

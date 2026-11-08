@@ -590,7 +590,33 @@ public sealed class HydrationCache
             return false;
         }
 
+        AlsFreigegebenMerken(handle, relativePath);
         return true;
+    }
+
+    /// <summary>
+    /// Vermerkt an einem freigegebenen Platzhalter, dass sein Inhalt nicht
+    /// mehr hier liegt.
+    /// </summary>
+    /// <remarks>
+    /// Der Explorer leitet die Verfuegbarkeit eines Platzhalters auch aus dem
+    /// Anheft-Zustand ab. Ohne diesen Vermerk zeigt er eine Datei, deren
+    /// Inhalt gerade abgegeben wurde, weiter als vorhanden -- und den Ordner
+    /// darueber als nicht abgeglichen. Der Anbieter, der auf diesem Rechner
+    /// arbeitet (FnSync), haelt es genauso: "nicht angeheftet" steht an den
+    /// freigegebenen Dateien, nicht an den gefuellten.
+    ///
+    /// Scheitert es, bleibt es beim alten Zustand: ein Anzeigefehler, kein
+    /// Datenverlust.
+    /// </remarks>
+    private unsafe void AlsFreigegebenMerken(SafeFileHandle handle, string relativePath)
+    {
+        var pin = PInvoke.CfSetPinState(
+            handle, CF_PIN_STATE.CF_PIN_STATE_UNPINNED, CF_SET_PIN_FLAGS.CF_SET_PIN_FLAG_NONE, null);
+
+        if (pin.Failed)
+            _log?.Invoke($"  Anheft-Zustand nach dem Freigeben von \"{relativePath}\": " +
+                         $"0x{(uint)pin.Value:X8}");
     }
 
     /// <summary>
@@ -632,6 +658,8 @@ public sealed class HydrationCache
                              $"schlug fehl: 0x{(uint)result.Value:X8}");
                 return false;
             }
+
+            AlsFreigegebenMerken(handle, relativePath);
 
             // Kein Wort je Datei. Beim Aufraeumen sind es hunderte auf einmal,
             // und sie ueberdecken im Protokollfenster alles, was etwas sagt.
