@@ -41,6 +41,19 @@ public sealed class RelayListener : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly SemaphoreSlim _schreibsperre = new(1, 1);
 
+    /// <summary>Wie viele eingeladene Leitungen gleichzeitig aufgebaut werden.</summary>
+    /// <remarks>
+    /// Jede Einladung oeffnet eine eigene Verbindung zum Relay. Der Relay darf
+    /// beliebig viele schicken; ohne Grenze entstuende daraus eine beliebige
+    /// Zahl gleichzeitiger Verbindungen.
+    /// </remarks>
+    private const int Einladungen = 6;
+
+    private readonly SemaphoreSlim _einladungsSperre = new(Einladungen, Einladungen);
+    private readonly object _ueberlaufGate = new();
+    private long _letzteUeberlaufmeldung;
+    private int _ueberlaeufe;
+
     private Task? _lauf;
 
     public RelayListener(DeviceIdentity identity, Action<string> log)
@@ -219,6 +232,15 @@ public sealed class RelayListener : IAsyncDisposable
                     // Nebenher. Waehrend die Leitung aufgebaut wird, koennen
                     // weitere Einladungen kommen, und der Relay erwartet
                     // weiterhin Antworten auf seine Lebenszeichen.
+                    // Auch hier nicht unbegrenzt: jede Einladung baut eine
+                    // eigene Leitung auf, und der Relay darf beliebig viele
+                    // schicken.
+                    if (!_einladungsSperre.Wait(0))
+                    {
+                        MeldeUeberlauf(relay);
+                        break;
+                    }
+
                     _ = Task.Run(() => LeitungAnnehmenAsync(relay, einladung, ct), ct);
                     break;
 
@@ -278,6 +300,25 @@ public sealed class RelayListener : IAsyncDisposable
         finally
         {
             tcp?.Dispose();
+            _einladungsSperre.Release();
+        }
+    }
+
+    /// <summary>Meldet abgewiesene Einladungen, hoechstens einmal je Minute.</summary>
+    private void MeldeUeberlauf(RelayClient.Adresse relay)
+    {
+        lock (_ueberlaufGate)
+        {
+            _ueberlaeufe++;
+
+            var jetzt = Environment.TickCount64;
+            if (jetzt - _letzteUeberlaufmeldung < 60_000) return;
+
+            _log($"Relay {relay.Host}: {_ueberlaeufe} Einladungen abgewiesen — mehr als " +
+                 $"{Einladungen} gleichzeitig.");
+
+            _letzteUeberlaufmeldung = jetzt;
+            _ueberlaeufe = 0;
         }
     }
 

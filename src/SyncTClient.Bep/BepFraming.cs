@@ -90,7 +90,20 @@ public static class BepFraming
             throw new InvalidDataException($"Entpackte Groesse {size} ausserhalb des Erlaubten.");
 
         var target = new byte[size];
-        var written = LZ4Codec.Decode(compressed.AsSpan(4), target.AsSpan());
+
+        int written;
+        try
+        {
+            written = LZ4Codec.Decode(compressed.AsSpan(4), target.AsSpan());
+        }
+        catch (Exception ex)
+        {
+            // Was kein gueltiger LZ4-Block ist, ist ein Formatfehler der
+            // Gegenstelle -- und keine Ursache, die jemand im Programm suchen
+            // muesste. Deshalb eine Form, die der Aufrufer einordnen kann.
+            throw new InvalidDataException($"LZ4 liess sich nicht entpacken: {ex.Message}", ex);
+        }
+
         if (written != size)
             throw new InvalidDataException($"LZ4 lieferte {written} statt {size} Bytes.");
 

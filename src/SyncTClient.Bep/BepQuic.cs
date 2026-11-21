@@ -147,6 +147,19 @@ public static class BepQuic
         private readonly Action<string> _log;
         private readonly CancellationTokenSource _cts = new();
 
+    /// <summary>Wie viele QUIC-Handschlaege gleichzeitig laufen duerfen.</summary>
+    /// <remarks>
+    /// Dieselbe Zahl wie am TCP-Eingang. Eine QUIC-Verbindung steht schon,
+    /// bevor der Handschlag beginnt; ohne Grenze bindet sie damit Platz,
+    /// bevor irgendetwas geprueft ist.
+    /// </remarks>
+    private const int Handshakes = 8;
+
+    private readonly SemaphoreSlim _handschlagSperre = new(Handshakes, Handshakes);
+    private readonly object _ueberlaufGate = new();
+    private long _letzteUeberlaufmeldung;
+    private int _ueberlaeufe;
+
         private QuicListener? _lauscher;
         private Task? _lauf;
 
@@ -227,6 +240,17 @@ public static class BepQuic
                     var uebernommen = verbindung;
                     verbindung = null;
 
+                    // Wie am TCP-Eingang: nicht unbegrenzt viele gleichzeitig.
+                    // Eine QUIC-Verbindung ist vor dem Handschlag bereits
+                    // aufgebaut und belegt damit schon Platz, bevor irgendetwas
+                    // geprueft ist.
+                    if (!_handschlagSperre.Wait(0))
+                    {
+                        MeldeUeberlauf(uebernommen.RemoteEndPoint);
+                        await uebernommen.DisposeAsync().ConfigureAwait(false);
+                        continue;
+                    }
+
                     _ = Task.Run(() => HandschlagAsync(uebernommen, ct), ct);
                 }
                 catch (OperationCanceledException)
@@ -264,6 +288,29 @@ public static class BepQuic
                 if (strom is not null) await strom.DisposeAsync().ConfigureAwait(false);
                 await verbindung.DisposeAsync().ConfigureAwait(false);
                 _log($"QUIC: Handschlag fehlgeschlagen: {ex.Message}");
+            }
+            finally
+            {
+                _handschlagSperre.Release();
+            }
+        }
+
+        /// <summary>Meldet abgewiesene Verbindungen, hoechstens einmal je Minute.</summary>
+        private void MeldeUeberlauf(System.Net.IPEndPoint? remote)
+        {
+            lock (_ueberlaufGate)
+            {
+                _ueberlaeufe++;
+
+                var jetzt = Environment.TickCount64;
+                if (jetzt - _letzteUeberlaufmeldung < 60_000) return;
+
+                var wo = remote?.Address.ToString() ?? "unbekannt";
+                _log($"QUIC: {_ueberlaeufe} Verbindungen abgewiesen: mehr als {Handshakes} " +
+                     $"gleichzeitig, zuletzt von {wo}.");
+
+                _letzteUeberlaufmeldung = jetzt;
+                _ueberlaeufe = 0;
             }
         }
 

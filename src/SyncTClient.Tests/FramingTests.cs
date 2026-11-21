@@ -1,4 +1,6 @@
+using System.Buffers.Binary;
 using Google.Protobuf;
+using K4os.Compression.LZ4;
 using SyncTClient.Bep;
 using SyncTClient.Bep.Proto;
 using IndexMessage = SyncTClient.Bep.Proto.Index;
@@ -13,6 +15,45 @@ namespace SyncTClient.Tests;
 /// </summary>
 public class FramingTests
 {
+    /// <summary>Baut einen Rahmen von Hand, damit sich auch LZ4 pruefen laesst.</summary>
+    private static MemoryStream Rahmen(MessageType typ, MessageCompression kompression, byte[] nutzlast)
+    {
+        var header = new Header { Type = typ, Compression = kompression }.ToByteArray();
+        var strom = new MemoryStream();
+
+        strom.WriteByte((byte)(header.Length >> 8));
+        strom.WriteByte((byte)header.Length);
+        strom.Write(header);
+
+        var laenge = new byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(laenge, (uint)nutzlast.Length);
+        strom.Write(laenge);
+        strom.Write(nutzlast);
+
+        strom.Position = 0;
+        return strom;
+    }
+
+    /// <summary>Verpackt Rohdaten so, wie Syncthing sie komprimiert.</summary>
+    private static byte[] Lz4(byte[] roh)
+    {
+        var puffer = new byte[LZ4Codec.MaximumOutputSize(roh.Length)];
+        var geschrieben = LZ4Codec.Encode(roh, puffer);
+        Assert.True(geschrieben > 0);
+
+        var nutzlast = new byte[4 + geschrieben];
+        BinaryPrimitives.WriteUInt32BigEndian(nutzlast, (uint)roh.Length);
+        puffer.AsSpan(0, geschrieben).CopyTo(nutzlast.AsSpan(4));
+        return nutzlast;
+    }
+
+    private static byte[] BeispielIndex()
+    {
+        var nachricht = new IndexMessage();
+        nachricht.Files.Add(new ProtoFileInfo { Name = new string('x', 5000), Size = 1234 });
+        return nachricht.ToByteArray();
+    }
+
     [Fact]
     public async Task Nachricht_geht_durch_und_kommt_unveraendert_zurueck()
     {
@@ -30,20 +71,29 @@ public class FramingTests
     [Fact]
     public async Task Laengere_Nutzlast_bleibt_vollstaendig()
     {
-        var nachricht = new IndexMessage();
-        nachricht.Files.Add(new ProtoFileInfo { Name = new string('x', 5000), Size = 1234 });
+        var roh = BeispielIndex();
 
-        using var strom = new MemoryStream();
-        await BepFraming.WriteMessageAsync(strom, MessageType.Index, nachricht, CancellationToken.None);
-        strom.Position = 0;
-
+        using var strom = Rahmen(MessageType.Index, MessageCompression.None, roh);
         var (typ, nutzlast) = await BepFraming.ReadMessageAsync(strom, CancellationToken.None);
 
         Assert.Equal(MessageType.Index, typ);
+        Assert.Equal(roh, nutzlast);
 
         var gelesen = IndexMessage.Parser.ParseFrom(nutzlast);
-        Assert.Equal(nachricht.Files[0].Name, gelesen.Files[0].Name);
+        Assert.Equal(5000, gelesen.Files[0].Name.Length);
         Assert.Equal(1234, gelesen.Files[0].Size);
+    }
+
+    [Fact]
+    public async Task Komprimierte_Nachricht_wird_entpackt()
+    {
+        var roh = BeispielIndex();
+
+        using var strom = Rahmen(MessageType.Index, MessageCompression.Lz4, Lz4(roh));
+        var (typ, nutzlast) = await BepFraming.ReadMessageAsync(strom, CancellationToken.None);
+
+        Assert.Equal(MessageType.Index, typ);
+        Assert.Equal(roh, nutzlast);
     }
 
     [Fact]
@@ -62,24 +112,73 @@ public class FramingTests
     }
 
     [Fact]
+    public async Task Entpackte_Groesse_ueber_dem_Erlaubten_wird_abgewiesen()
+    {
+        // Der Rahmen selbst ist klein; erst die vorangestellte Groesse behauptet
+        // 500_000_001 Bytes. Auch das muss vor der Zuteilung auffallen.
+        using var strom = Rahmen(MessageType.Index, MessageCompression.Lz4,
+            [0x1D, 0xCD, 0x65, 0x01, 0xFF, 0xFF, 0xFF, 0xFF]);
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            async () => await BepFraming.ReadMessageAsync(strom, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Zu_kurze_Kompression_wird_abgewiesen()
+    {
+        using var strom = Rahmen(MessageType.Index, MessageCompression.Lz4, [0x01, 0x02, 0x03]);
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            async () => await BepFraming.ReadMessageAsync(strom, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Kaputte_Kompression_wird_als_Formatfehler_gemeldet()
+    {
+        // Gueltige Groesse, unsinniger Inhalt dahinter.
+        using var strom = Rahmen(MessageType.Index, MessageCompression.Lz4, Lz4Kopf(64, 0x42, 0x43, 0x44));
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            async () => await BepFraming.ReadMessageAsync(strom, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Unbekanntes_Verfahren_wird_abgewiesen()
+    {
+        using var strom = Rahmen(MessageType.Index, (MessageCompression)99, [0x00]);
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            async () => await BepFraming.ReadMessageAsync(strom, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Abgeschnittene_Nachricht_wird_erkannt()
     {
-        using var strom = new MemoryStream();
-        await BepFraming.WriteMessageAsync(strom, MessageType.Ping, new Ping(), CancellationToken.None);
+        using var vollstaendig = new MemoryStream();
+        await BepFraming.WriteMessageAsync(vollstaendig, MessageType.Ping, new Ping(), CancellationToken.None);
 
-        var alles = strom.ToArray();
+        var alles = vollstaendig.ToArray();
         using var halb = new MemoryStream(alles[..^1]);
 
-        await Assert.ThrowsAnyAsync<Exception>(
+        await Assert.ThrowsAsync<EndOfStreamException>(
             async () => await BepFraming.ReadMessageAsync(halb, CancellationToken.None));
     }
 
     [Fact]
-    public async Task Leerer_Strom_endet_mit_einer_Ausnahme()
+    public async Task Leerer_Strom_endet_mit_Ende_der_Daten()
     {
         using var strom = new MemoryStream();
 
-        await Assert.ThrowsAnyAsync<Exception>(
+        await Assert.ThrowsAsync<EndOfStreamException>(
             async () => await BepFraming.ReadMessageAsync(strom, CancellationToken.None));
+    }
+
+    /// <summary>Vorangestellte Groesse gefolgt von beliebigen Bytes.</summary>
+    private static byte[] Lz4Kopf(uint groesse, params byte[] rest)
+    {
+        var nutzlast = new byte[4 + rest.Length];
+        BinaryPrimitives.WriteUInt32BigEndian(nutzlast, groesse);
+        rest.CopyTo(nutzlast.AsSpan(4));
+        return nutzlast;
     }
 }
