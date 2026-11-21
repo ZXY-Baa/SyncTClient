@@ -77,8 +77,18 @@ jobs:
 
           $paket = Get-ChildItem dist\*.exe | Select-Object -First 1
           if (-not $paket) { throw "Kein Installationspaket entstanden." }
+
+          # Pruefsumme neben das Paket. Sie belegt nicht, wer es gebaut hat --
+          # aber sie belegt, dass die Datei unterwegs unveraendert blieb, und
+          # gehoert zu genau diesem Lauf.
+          $summe = (Get-FileHash $paket.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $summendatei = Join-Path $paket.DirectoryName ($paket.Name + ".sha256")
+          "$summe  $($paket.Name)" | Out-File -FilePath $summendatei -Encoding utf8
+
           "PAKET=$($paket.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SUMME=$summendatei" | Out-File -FilePath $env:GITHUB_ENV -Append
           "Paket: $($paket.Name), {0:N1} MB" -f ($paket.Length / 1MB)
+          "SHA-256: $summe"
 
       - name: Freigabe anlegen
         shell: pwsh
@@ -97,7 +107,10 @@ jobs:
           & gh release delete "v$env:FASSUNG" --yes 2>$null
           if ($LASTEXITCODE -eq 0) { Write-Host "Vorhandene Freigabe fuer v$env:FASSUNG entfernt." }
 
-          $argumente = @('release', 'create', "v$env:FASSUNG", $env:PAKET, '--title', "SyncTClient $env:FASSUNG")
+          $anhang = @($env:PAKET)
+          if ($env:SUMME -and (Test-Path $env:SUMME)) { $anhang += $env:SUMME }
+
+          $argumente = @('release', 'create', "v$env:FASSUNG") + $anhang + @('--title', "SyncTClient $env:FASSUNG")
           if ($treffer.Success -and $treffer.Groups[1].Value.Trim()) {
             $hinweise = Join-Path $env:RUNNER_TEMP 'hinweise.md'
             [System.IO.File]::WriteAllText($hinweise, $treffer.Groups[1].Value.Trim(), (New-Object System.Text.UTF8Encoding($false)))
