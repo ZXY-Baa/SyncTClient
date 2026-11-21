@@ -52,6 +52,12 @@ public sealed class BepConnection : IAsyncDisposable
     private readonly ConcurrentDictionary<int, TaskCompletionSource<Response>> _pending = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly SemaphoreSlim _serveGate = new(ConcurrentServes);
+
+    /// <summary>Wie viele Anfragen gleichzeitig vorgemerkt sein duerfen.</summary>
+    private const int OffeneAnfragen = 64;
+
+    /// <summary>Zaehlt die vorgemerkten Anfragen, laufende eingeschlossen.</summary>
+    private int _offeneAnfragen;
     private int _nextRequestId;
 
     private BepConnection(IDisposable? unterbau, Stream tls, DeviceId peerId, Hello peerHello)
@@ -334,7 +340,25 @@ public sealed class BepConnection : IAsyncDisposable
                         // verarbeitet. Bei einer Datei, die wir gerade selbst
                         // hydrieren, entstuende dadurch ein Deadlock.
                         var request = Proto.Request.Parser.ParseFrom(payload);
-                        _ = Task.Run(() => ServeAsync(request, ct), CancellationToken.None);
+
+                        // Bis zu einer Grenze vorhalten, nicht unbegrenzt. Die
+                        // Sperre weiter unten begrenzt nur, wie viele
+                        // gleichzeitig laufen; wartende Aufgaben entstuenden
+                        // sonst beliebig viele, und jede haelt ihre Anfrage
+                        // fest. Wer darueber kommt, bekommt einen Fehler und
+                        // kommt spaeter wieder.
+                        if (Interlocked.Increment(ref _offeneAnfragen) > OffeneAnfragen)
+                        {
+                            Interlocked.Decrement(ref _offeneAnfragen);
+                            _ = Task.Run(() => AblehnenAsync(request, ct), CancellationToken.None);
+                            break;
+                        }
+
+                        _ = Task.Run(async () =>
+                        {
+                            try { await ServeAsync(request, ct).ConfigureAwait(false); }
+                            finally { Interlocked.Decrement(ref _offeneAnfragen); }
+                        }, CancellationToken.None);
                         break;
 
                     case MessageType.Close:
@@ -393,6 +417,30 @@ public sealed class BepConnection : IAsyncDisposable
     /// Verbindung bereits geschlossen ist, unterbleibt die Antwort. Die
     /// Gegenstelle erkennt den Abbruch dann selbst.
     /// </remarks>
+    /// <summary>
+    /// Antwortet einer Gegenstelle, die mehr anfragt, als wir vorhalten.
+    /// </summary>
+    /// <remarks>
+    /// Ein Fehler statt Schweigen: Syncthing wertet ihn als "dieser Block kam
+    /// nicht" und fragt spaeter erneut, statt in seine Frist zu laufen.
+    /// </remarks>
+    private async Task AblehnenAsync(Proto.Request request, CancellationToken ct)
+    {
+        try
+        {
+            await SendAsync(MessageType.Response, new Response
+            {
+                Id = request.Id,
+                Code = ErrorCode.Generic,
+                Data = ByteString.Empty
+            }, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Verbindung weg; die Antwort hat keinen Empfaenger mehr.
+        }
+    }
+
     private async Task ServeAsync(Proto.Request request, CancellationToken ct)
     {
         var code = ErrorCode.NoSuchFile;

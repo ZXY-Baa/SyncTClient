@@ -129,6 +129,11 @@ public partial class MainWindow : Window
 
         _configPath = AppConfig.DefaultConfigPath();
 
+        // Gemeldet, nicht geaendert: an einem bestehenden Ordner die Rechte
+        // umzustellen waere ein Eingriff, dessen Folgen niemand hier
+        // ueberblickt. Gesetzt werden sie nur an einem neuen; siehe Save.
+        Konfigurationsrechte.Pruefen(Path.GetDirectoryName(_configPath)!, AppendLog);
+
         Load();
         BuildColumnMenu();
         BuildRowMenu();

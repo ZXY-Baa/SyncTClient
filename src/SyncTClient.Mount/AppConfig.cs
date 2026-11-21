@@ -905,6 +905,10 @@ public sealed class AppConfig
         var text = JsonSerializer.Serialize(this, Format);
         var voll = Path.GetFullPath(path);
 
+        // Ein neuer Ordner bekommt seine Rechte, bevor die erste Datei darin
+        // liegt -- darunter der private Schluessel des Geraets.
+        Konfigurationsrechte.Anlegen(Path.GetDirectoryName(voll)!);
+
         if (!File.Exists(voll))
         {
             File.WriteAllText(voll, text);

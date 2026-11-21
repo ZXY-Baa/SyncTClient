@@ -35,6 +35,19 @@ public sealed class BepListener : IAsyncDisposable
     private long _letzteAbbruchmeldung;
     private int _abbrueche;
 
+    /// <summary>Wie viele Handschlaege gleichzeitig laufen duerfen.</summary>
+    /// <remarks>
+    /// Acht ist reichlich fuer einen Client mit einer Handvoll Geraeten und
+    /// wenig genug, dass ein Sturm aus Verbindungen keinen Rechner ausbremst.
+    /// </remarks>
+    private const int Handshakes = 8;
+
+    /// <summary>Zaehlt die laufenden Handschlaege.</summary>
+    private readonly SemaphoreSlim _handshakeGate = new(Handshakes, Handshakes);
+
+    private long _letzteUeberlaufmeldung;
+    private int _ueberlaeufe;
+
     public BepListener(DeviceIdentity identity, string deviceName, Action<string> log)
     {
         _identity = identity;
@@ -105,6 +118,20 @@ public sealed class BepListener : IAsyncDisposable
                 return;
             }
 
+            // Und nicht unbegrenzt viele gleichzeitig. Jeder angenommene
+            // Socket belegt Puffer und einen Platz im Threadpool, und der
+            // Handschlag darf bis zu fuenfzehn Sekunden dauern. Wer
+            // Verbindungen aufmacht und dann schweigt, bindet sonst beliebig
+            // viel davon. Ueberzaehlige werden sofort geschlossen: die
+            // Gegenstelle merkt es am RST und kommt spaeter wieder, statt hier
+            // zu warten.
+            if (!_handshakeGate.Wait(0))
+            {
+                MeldeUeberlauf(tcp.Client.RemoteEndPoint as IPEndPoint);
+                tcp.Dispose();
+                continue;
+            }
+
             // Der Handschlag darf die Schleife nicht aufhalten. Eine langsame
             // Gegenstelle wuerde sonst alle anderen blockieren.
             _ = Task.Run(() => HandshakeAsync(tcp, ct), CancellationToken.None);
@@ -139,6 +166,32 @@ public sealed class BepListener : IAsyncDisposable
 
             tcp.Dispose();
         }
+        finally
+        {
+            _handshakeGate.Release();
+        }
+    }
+
+    /// <summary>Meldet abgewiesene Verbindungen, hoechstens einmal je Minute.</summary>
+    private void MeldeUeberlauf(IPEndPoint? remote)
+    {
+        string zeile;
+
+        lock (_abbruchGate)
+        {
+            _ueberlaeufe++;
+
+            var jetzt = Environment.TickCount64;
+            if (jetzt - _letzteUeberlaufmeldung < 60_000) return;
+
+            zeile = $"{_ueberlaeufe} Verbindungen abgewiesen: mehr als {Handshakes} " +
+                    $"gleichzeitig, zuletzt von {Wer(remote)}.";
+
+            _letzteUeberlaufmeldung = jetzt;
+            _ueberlaeufe = 0;
+        }
+
+        _log(zeile);
     }
 
     /// <summary>
