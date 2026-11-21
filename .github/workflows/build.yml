@@ -39,11 +39,19 @@ jobs:
       - name: Fassung anzeigen
         run: dotnet --version
 
-      # Baut alle sieben Projekte, die Shell-Erweiterung eingeschlossen.
+      # Baut alle acht Projekte, die Shell-Erweiterung und die Tests
+      # eingeschlossen.
       # Laeuft ohne -warnaserror: eine neue SDK-Fassung soll den Lauf nicht
       # an einer Warnung scheitern lassen, die niemand verursacht hat.
       - name: Uebersetzen
         run: dotnet build SyncTClient.slnx -c Release --nologo
+
+      # Die Rechnung: Blockliste, Rahmung, Versionsvektoren, Geraetekennung.
+      # Gerade dort sind in der Vergangenheit Fehler entstanden, die sich sonst
+      # erst an echten Gegenstellen zeigen. Was einen Sync-Root, eine
+      # Verbindung oder eine Datenbank braucht, steht (noch) nicht hier.
+      - name: Tests
+        run: dotnet test src/SyncTClient.Tests/SyncTClient.Tests.csproj -c Release --no-build --nologo
 
       # Prueft, dass die Protokollbibliothek geladen wird und eine
       # Geraetekennung erzeugen kann. Kostet Sekunden und faengt Fehler,
