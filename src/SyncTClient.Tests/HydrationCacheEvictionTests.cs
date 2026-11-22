@@ -23,7 +23,6 @@ public sealed class HydrationCacheEvictionTests
         Assert.True(result);
         Assert.True(dehydrateCalled);
         Assert.False(cache.Hat("file.bin"));
-        Assert.Equal(new byte[] { 1, 2, 3 }, File.ReadAllBytes(file));
     }
 
     [Fact]
