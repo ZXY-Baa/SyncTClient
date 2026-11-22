@@ -1,4 +1,6 @@
-﻿namespace SyncTClient.Vfs;
+﻿using System.Collections.Concurrent;
+
+namespace SyncTClient.Vfs;
 
 /// <summary>Die Grenzen eines einzelnen Datenträgers.</summary>
 /// <param name="MaxBytes">Höchstens so viel darf belegt sein. 0 = kein Limit.</param>
@@ -50,6 +52,19 @@ public sealed class CacheLimits
 {
     private readonly List<HydrationCache> _caches = [];
     private readonly SemaphoreSlim _evictionLock = new(1, 1);
+
+    /// <summary>Wie lange nach einem vergeblichen Durchgang nicht erneut gesucht wird.</summary>
+    /// <remarks>
+    /// Der Anlass ist gemessen: solange das Limit nicht zu halten war -- weil
+    /// alles angeheftet, in Benutzung oder unter der Platzhalter-Schwelle ist
+    /// --, lief ein Durchgang nach jedem Zuwachs, also alle paar Sekunden, und
+    /// rechnete dabei jedes Mal die Blocklisten der Kandidaten neu. Das ist
+    /// Arbeit ohne Aussicht: die Lage aendert sich in Sekunden nicht.
+    /// </remarks>
+    private static readonly TimeSpan Nachfrist = TimeSpan.FromSeconds(90);
+
+    /// <summary>Je Datentraeger, wann zuletzt nichts freigegeben werden konnte.</summary>
+    private readonly ConcurrentDictionary<string, long> _erfolglos = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly Func<string, VolumeLimits> _limits;
 
@@ -285,6 +300,12 @@ public sealed class CacheLimits
 
     private async Task<(int Files, long Bytes)> ShrinkToAsync(string root, long limit, string reason)
     {
+        // Zuerst die billige Frage: hat es vor kurzem schon nicht geklappt?
+        // Dann wird weder gesucht noch gerechnet.
+        if (_erfolglos.TryGetValue(root, out var zuletzt) &&
+            Environment.TickCount64 - zuletzt < Nachfrist.TotalMilliseconds)
+            return (0, 0);
+
         await _evictionLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -326,6 +347,8 @@ public sealed class CacheLimits
 
             if (anzahl > 0)
             {
+                _erfolglos.TryRemove(root, out _);
+
                 foreach (var cache in caches) cache.Persist();
                 Log?.Invoke($"{root} {anzahl} Dateien in Platzhalter umgewandelt ({reason}), " +
                             $"{frei / (1024.0 * 1024.0):0.0} MB frei " +
@@ -333,9 +356,12 @@ public sealed class CacheLimits
             }
             else
             {
+                _erfolglos[root] = Environment.TickCount64;
+
                 Log?.Invoke($"{root} nichts umgewandelt, {reason} " +
                             $"({belegt / (1024.0 * 1024.0):0.0} MB belegt) -- " +
-                            "angeheftet, in Benutzung, oder die Platzhalter-Schwelle ist nicht erreicht.");
+                            "angeheftet, in Benutzung, oder die Platzhalter-Schwelle ist nicht erreicht. " +
+                            $"Naechster Versuch in {Nachfrist.TotalSeconds:0} s.");
             }
 
             return (anzahl, frei);
