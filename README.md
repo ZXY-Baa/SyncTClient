@@ -213,8 +213,8 @@ protected your PC" and reports the publisher as unknown. There are two reasons
 for that, and neither is a finding:
 
 - **There is no code signing certificate.** A certificate Windows trusts costs
-  money every year. For a program I write alone and earn nothing from, that is
-  not on the cards.
+  money every year. The build is prepared to sign with one -- the steps are in
+  [docs/signing.md](docs/signing.md) -- but none is configured yet.
 - **SyncTClient is new.** SmartScreen also judges by reputation: something that
   has rarely been downloaded is unknown to it, and it warns to be safe. That
   fades as the number of installations grows, but it can take a while.

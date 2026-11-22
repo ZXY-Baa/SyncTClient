@@ -223,8 +223,8 @@ Computer wurde durch Windows geschützt" und nennt als Herausgeber „Unbekannte
 Herausgeber". Das hat zwei Gründe, und keiner davon ist ein Fund:
 
 - **Es gibt kein Signaturzertifikat.** Ein Zertifikat, dem Windows vertraut,
-  kostet jedes Jahr Geld. Für ein Programm, das ich allein und ohne Einnahmen
-  entwickle, ist das nicht drin.
+  kostet jedes Jahr Geld. Der Bau ist darauf vorbereitet (siehe
+  [docs/signing.md](docs/signing.md)), hinterlegt ist aber noch keines.
 - **SyncTClient ist neu.** SmartScreen urteilt zusätzlich nach Bekanntheit: was
   selten heruntergeladen wurde, kennt es nicht und warnt vorsichtshalber. Das
   legt sich mit der Zahl der Installationen, kann aber dauern.

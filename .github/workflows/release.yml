@@ -54,6 +54,46 @@ jobs:
       - name: Veroeffentlichen
         run: dotnet publish src/SyncTClient.Gui/SyncTClient.Gui.csproj -c Release -p:PublishProfile=FolderProfile -p:SelfContained=true --nologo
 
+      # Signiert wird nur, wenn ein Zertifikat hinterlegt ist. Ohne die beiden
+      # Geheimnisse laeuft der Lauf wie bisher: unsigniert, und Windows warnt
+      # beim Start. Wie das Zertifikat hereinkommt, steht in docs/signing.md.
+      #
+      # Signiert wird vor dem Verpacken: was im Paket liegt, muss schon
+      # signiert sein, sonst traegt die ausgelieferte Datei eine Signatur, die
+      # zum Inhalt nicht passt.
+      - name: Programm signieren
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
+          PFX_PASSWORT: ${{ secrets.SIGN_PFX_PASSWORD }}
+        run: |
+          if (-not $env:PFX_BASE64) {
+            Write-Host "Kein Zertifikat hinterlegt (SIGN_PFX_BASE64) - unsigniert."
+            exit 0
+          }
+
+          $pfx = Join-Path $env:RUNNER_TEMP 'signatur.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
+
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+                      Where-Object { $_.FullName -match \\x64\\ } |
+                      Sort-Object FullName -Descending |
+                      Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe nicht gefunden." }
+          "SIGNTOOL=$($signtool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          # Nur was gestartet wird. Jede Bibliothek zu signieren kostet Minuten
+          # und bewirkt nichts: geprueft wird die Datei, die Windows ausfuehrt.
+          foreach ($datei in @('BIN\SyncTClient.exe', 'BIN\synctexplorer.dll')) {
+            if (-not (Test-Path $datei)) { Write-Host "$datei fehlt - uebersprungen."; continue }
+
+            & $signtool.FullName sign /f $pfx /p $env:PFX_PASSWORT /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $datei
+            if ($LASTEXITCODE -ne 0) { throw "Signieren von $datei brach mit $LASTEXITCODE ab." }
+          }
+
+          Remove-Item $pfx -Force
+          "Programm signiert."
+
       - name: Inno Setup installieren
         run: choco install innosetup -y --no-progress
 
@@ -77,6 +117,35 @@ jobs:
 
           $paket = Get-ChildItem dist\*.exe | Select-Object -First 1
           if (-not $paket) { throw "Kein Installationspaket entstanden." }
+          "PAKET=$($paket.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # Nach dem Verpacken und vor der Pruefsumme. Andersherum passte der
+      # veroeffentlichte Wert nicht zu dem, was heruntergeladen wird.
+      - name: Installationspaket signieren
+        shell: pwsh
+        env:
+          PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
+          PFX_PASSWORT: ${{ secrets.SIGN_PFX_PASSWORD }}
+        run: |
+          if (-not $env:PFX_BASE64) {
+            Write-Host "Kein Zertifikat hinterlegt - unsigniert."
+            exit 0
+          }
+          if (-not $env:SIGNTOOL) { throw "SIGNTOOL fehlt; der Signierschritt lief nicht." }
+
+          $pfx = Join-Path $env:RUNNER_TEMP 'signatur.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_BASE64))
+
+          & $env:SIGNTOOL sign /f $pfx /p $env:PFX_PASSWORT /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $env:PAKET
+          if ($LASTEXITCODE -ne 0) { throw "Signieren des Pakets brach mit $LASTEXITCODE ab." }
+
+          Remove-Item $pfx -Force
+          "Paket signiert."
+
+      - name: Pruefsumme
+        shell: pwsh
+        run: |
+          $paket = Get-Item $env:PAKET
 
           # Pruefsumme neben das Paket. Sie belegt nicht, wer es gebaut hat --
           # aber sie belegt, dass die Datei unterwegs unveraendert blieb, und
@@ -85,7 +154,6 @@ jobs:
           $summendatei = Join-Path $paket.DirectoryName ($paket.Name + ".sha256")
           "$summe  $($paket.Name)" | Out-File -FilePath $summendatei -Encoding utf8
 
-          "PAKET=$($paket.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "SUMME=$summendatei" | Out-File -FilePath $env:GITHUB_ENV -Append
           "Paket: $($paket.Name), {0:N1} MB" -f ($paket.Length / 1MB)
           "SHA-256: $summe"

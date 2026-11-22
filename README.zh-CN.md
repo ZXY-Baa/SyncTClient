@@ -181,8 +181,8 @@ Syncthing 里的 `FileInfo.setLocalFlags()` 会调用 `setNoContent()`，把块�
 启动安装程序时，Microsoft Defender SmartScreen 会提示“Windows 已保护你的电脑”，
 并把发布者标为未知。原因有两个，都不是问题：
 
-- **没有代码签名证书。** 一张 Windows 信任的证书每年都要花钱。对一个只有我一个
-  人编写、也不赚钱的程序来说，这不在考虑范围内。
+- **没有代码签名证书。** 一张 Windows 信任的证书每年都要花钱。构建流程已经为
+  签名做好准备（见 [docs/signing.md](docs/signing.md)），但目前还没有配置证书。
 - **SyncTClient 很新。** SmartScreen 也会按声誉判断：很少被下载的东西对它来说
   是陌生的，出于安全它会先警告。随着安装量增长，这个提示会逐渐消失，但需要
   时间。
