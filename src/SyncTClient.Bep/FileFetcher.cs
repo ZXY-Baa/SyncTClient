@@ -24,9 +24,22 @@ public static class FileFetcher
     {
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
         ArgumentOutOfRangeException.ThrowIfNegative(length);
-        if (offset + length > file.Size)
+
+        if (file.Size < 0)
+            throw new InvalidDataException($"\"{file.Name}\" hat eine negative Dateigroesse ({file.Size}).");
+
+        // Nicht offset + length rechnen: beide Werte sind nichtnegativ, ihre
+        // Summe kann aber long ueberlaufen und eine ungueltige Spanne gueltig
+        // erscheinen lassen.
+        if (offset > file.Size || length > file.Size - offset)
             throw new ArgumentOutOfRangeException(nameof(length),
                 $"Bereich {offset}+{length} liegt hinter dem Dateiende ({file.Size}).");
+
+        // Leere BEP-Dateien haben keine Bloecke. Das ist kein Hinweis darauf,
+        // dass der Peer den Inhalt nicht haelt: es gibt schlicht keine Bytes
+        // abzurufen.
+        if (file.Size == 0) return [];
+
         if (file.Blocks.Count == 0)
             throw new InvalidOperationException(
                 $"\"{file.Name}\" hat keine Blockliste -- der Peer haelt die Datei selbst nicht.");
