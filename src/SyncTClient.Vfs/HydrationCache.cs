@@ -387,6 +387,14 @@ public sealed class HydrationCache
 
     /// <summary>Gibt die Bytes einer einzelnen Datei frei.</summary>
     public bool Evict(string relativePath, string grund = "Limit erreicht")
+        => Evict(relativePath, grund, path => Dehydrate(path, grund));
+
+    /// <summary>
+    /// Fuehrt die pruefbare Evict-Entscheidung aus. Der Produktionspfad reicht
+    /// Dehydrate weiter; Tests koennen den Windows-Cloud-Filter-Aufruf ersetzen,
+    /// ohne die Datei- und Metadatenpruefungen zu umgehen.
+    /// </summary>
+    internal bool Evict(string relativePath, string grund, Func<string, bool> dehydrate)
     {
         if (!_entries.ContainsKey(relativePath)) return false;
 
@@ -442,7 +450,7 @@ public sealed class HydrationCache
         // fortgedraengt; sie ist an ihrem Platz geblieben und hat nur ihren
         // Speicherplatz abgegeben, weil das Limit des Datentraegers erreicht
         // war.
-        if (!Dehydrate(relativePath, grund)) return false;
+        if (!dehydrate(relativePath)) return false;
 
         _entries.TryRemove(relativePath, out _);
         return true;
