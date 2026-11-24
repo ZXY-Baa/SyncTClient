@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SyncTClient.Bep\SyncTClient.Bep.csproj" />
+    <ProjectReference Include="..\SyncTClient.Vfs\SyncTClient.Vfs.csproj" />
   </ItemGroup>
 
 </Project>
